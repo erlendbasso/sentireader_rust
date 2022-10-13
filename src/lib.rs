@@ -2,6 +2,7 @@ use std::time::Duration;
 
 mod dvl_a50_parser;
 pub use crate::dvl_a50_parser::a50_parser;
+use crate::dvl_a50_parser::DVLMessage;
 
 // static PORT_NAME : &str = "/dev/tty.usbmodem23103";
 const HEADER_SIZE: usize = 8;
@@ -11,8 +12,9 @@ const SENTIBOARD_TOV_POS: usize = HEADER_SIZE;
 const SENTIBOARD_TOA_POS: usize = SENTIBOARD_TOV_POS + 4;
 const SENTIBOARD_TOT_POS: usize = SENTIBOARD_TOA_POS + 4;
 // const TIMESTAMP_LEN: usize = 4;
-// const TOV_LEN: usize = 4;
-// const TOA_LEN: usize = 4;
+const TOV_LENGTH: usize = 4;
+const TOA_LENGTH: usize = 4;
+const TOT_LENGTH: usize = 4;
 // const BUF_SIZE: usize = 512;
 const BUF_SIZE: usize = 20480;
 
@@ -36,6 +38,7 @@ pub struct SentiReader {
     serial_buf: Vec<u8>,
     data_length: u16,
     pub sentiboard_data: Vec<u8>,
+    pub sensor_data: Vec<u8>,
     protocol_version: u8,
     has_onboard_timestamp: bool,
     pub sentiboard_msg: SentiboardMessage,
@@ -105,6 +108,8 @@ impl SentiReader {
 
         self.sentiboard_data = self.serial_buf[HEADER_SIZE..(self.data_length as usize + HEADER_SIZE)].to_vec(); 
 
+        self.sensor_data = self.sentiboard_data[TOV_LENGTH+TOA_LENGTH+TOT_LENGTH..].to_vec();
+
 
         if !self.compare_data_checksum() {
             return false;
@@ -133,6 +138,7 @@ pub fn initialize_sentireader(port_name: String, baud_rate: u32) -> SentiReader 
         protocol_version: 0,
         has_onboard_timestamp: false,
         sentiboard_data: vec![0; BUF_SIZE],
+        sensor_data: vec![0; BUF_SIZE],
         sentiboard_msg: SentiboardMessage {
             sensor_id: 0,
             time_of_validity: 0,
@@ -218,7 +224,7 @@ mod tests {
             // println!("{}: {}", i, sentireader.onboard_timestamp);
             // assert_eq!(res, true);
             if res {
-                dvl_a50_parser::a50_parser(&sentireader.sentiboard_data);
+                let dvl_msg: DVLMessage = dvl_a50_parser::a50_parser(&sentireader.sensor_data);
             }
             println!("Has onboard timestamp: {}", sentireader.has_onboard_timestamp);
             println!("tov {} toa: {}", sentireader.sentiboard_msg.time_of_validity, sentireader.sentiboard_msg.time_of_arrival);

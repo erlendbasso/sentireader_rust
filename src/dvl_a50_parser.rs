@@ -1,4 +1,3 @@
-use regex::Regex;
 
 // const SENTIBOARD_MSG_ID_DVL : usize = 4; // UART1 port id: 4
 
@@ -18,11 +17,14 @@ pub struct DVLMessage {
 
 pub fn a50_parser(data: &Vec<u8>) -> DVLMessage{
     let string_data = String::from_utf8_lossy(&data);
+    println!("{}", string_data);
 
-    let regex = Regex::new(r"(wrz.*)").unwrap();
-    let captures = regex.captures(&string_data).unwrap();
+    // let regex = Regex::new(r"(wrz.*)").unwrap();
+    // let captures = regex.captures(&string_data).unwrap();
 
-    let string_data_vec = captures.get(1).unwrap().as_str().split(',').collect::<Vec<&str>>();
+    // let string_data_vec = captures.get(1).unwrap().as_str().split(',').collect::<Vec<&str>>();
+
+    let string_data_vec = string_data.split(',').collect::<Vec<&str>>();
 
     // println!("{:?}", string_data_vec);
 
@@ -47,16 +49,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_regex() {
-        let s: String = "��L�f�wrz,0.000,-0.001,-0.000,y,0.21,0.001,7.618684207955084e-07;-2.821287807819317e-07;-5.334814900948004e-08;-2.821287807819317e-07;7.512716706514766e-07;4.705292511175685e-08;-5.334814900948004e-08;4.705292511175685e-08;5.9216439751708094e-08,1550144842797701,1550144842962146,80.86,0*15".to_string();
+    // fn test_regex() {
+    //     let s: String = "��L�f�wrz,0.000,-0.001,-0.000,y,0.21,0.001,7.618684207955084e-07;-2.821287807819317e-07;-5.334814900948004e-08;-2.821287807819317e-07;7.512716706514766e-07;4.705292511175685e-08;-5.334814900948004e-08;4.705292511175685e-08;5.9216439751708094e-08,1550144842797701,1550144842962146,80.86,0*15".to_string();
 
-        let re = Regex::new(r"(wrz.*)").unwrap();
-        let captures = re.captures(&s).unwrap();
+    //     let re = Regex::new(r"(wrz.*)").unwrap();
+    //     let captures = re.captures(&s).unwrap();
 
-        let data_str = captures.get(1).unwrap().as_str().split(',').collect::<Vec<&str>>();
-        // println!("data_str: {:?}", data_str);
-        // println!("re: {}", captures.get(1).unwrap().as_str());
+    //     let data_str = captures.get(1).unwrap().as_str().split(',').collect::<Vec<&str>>();
+    //     // println!("data_str: {:?}", data_str);
+    //     // println!("re: {}", captures.get(1).unwrap().as_str());
 
-        assert_eq!("wrz",data_str[0]);
-    }
+    //     assert_eq!("wrz",data_str[0]);
+    // }
 }
