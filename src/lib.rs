@@ -14,7 +14,7 @@ const SENTIBOARD_TOT_POS: usize = SENTIBOARD_TOA_POS + 4;
 // const TOV_LEN: usize = 4;
 // const TOA_LEN: usize = 4;
 // const BUF_SIZE: usize = 512;
-const BUF_SIZE: usize = 2048;
+const BUF_SIZE: usize = 20480;
 
 // const SENTIBOARD_MSG_ID_STIM : usize = 2; // RS422 port id: 2
 // const SENTIBOARD_MSG_ID_DVL : usize = 4; // UART1 port id: 4
@@ -220,6 +220,7 @@ mod tests {
             if res {
                 dvl_a50_parser::a50_parser(&sentireader.sentiboard_data);
             }
+            println!("Has onboard timestamp: {}", sentireader.has_onboard_timestamp);
             println!("tov {} toa: {}", sentireader.sentiboard_msg.time_of_validity, sentireader.sentiboard_msg.time_of_arrival);
             println!("sensor id: {}", sentireader.sentiboard_msg.sensor_id);
         }
