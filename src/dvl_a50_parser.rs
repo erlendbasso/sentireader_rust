@@ -1,17 +1,7 @@
 
 // const SENTIBOARD_MSG_ID_DVL : usize = 4; // UART1 port id: 4
 
-pub struct DVLMessage {
-    velocity: [f32; 3],
-    valid: char,
-    altitude: f32,
-    figure_of_merit: f32,
-    covariance: [f32; 9],
-    time_of_validity: u64,
-    time_of_transmission: u64,
-    time: f32,
-    status: i32,
-}
+use crate::messages::DVLMessage;
 
 
 
