@@ -7,7 +7,6 @@ use crate::messages::DVLMessage;
 
 pub fn a50_parser(data: &Vec<u8>) -> DVLMessage{
     let string_data = String::from_utf8_lossy(&data);
-    println!("{}", string_data);
 
     // let regex = Regex::new(r"(wrz.*)").unwrap();
     // let captures = regex.captures(&string_data).unwrap();

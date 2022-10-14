@@ -28,6 +28,8 @@ pub struct SentiboardMessage {
 
     pub onboard_timestamp: f64,
 
+    pub sensor_data: Vec<u8>,
+
     pub initialized: bool,
 }
 
@@ -37,7 +39,6 @@ pub struct SentiReader {
     serial_buf: Vec<u8>,
     data_length: u16,
     sentiboard_data: Vec<u8>,
-    pub sensor_data: Vec<u8>,
     protocol_version: u8,
     has_onboard_timestamp: bool,
     pub sentiboard_msg: SentiboardMessage,
@@ -124,17 +125,17 @@ impl SentiReader {
         self.sentiboard_msg.time_of_arrival = sentiboard_get_uint32(&self.serial_buf, SENTIBOARD_TOA_POS);
         self.sentiboard_msg.time_of_transport = sentiboard_get_uint32(&self.serial_buf, SENTIBOARD_TOT_POS);
 
-        self.sentiboard_data.resize(self.data_length as usize + HEADER_SIZE, 0);
-        self.sensor_data.resize(self.data_length as usize - TOV_LENGTH - TOA_LENGTH - TOT_LENGTH , 0);
+        // self.sentiboard_data.resize(self.data_length as usize + HEADER_SIZE, 0);
+        // self.sentiboard_msg.sensor_data.resize(self.data_length as usize - TOV_LENGTH - TOA_LENGTH - TOT_LENGTH , 0);
 
         self.sentiboard_data = self.serial_buf[HEADER_SIZE..(self.data_length as usize + HEADER_SIZE)].to_vec(); 
 
-        self.sensor_data = self.sentiboard_data[TOV_LENGTH+TOA_LENGTH+TOT_LENGTH..].to_vec();
-
+        self.sentiboard_msg.sensor_data = self.sentiboard_data[TOV_LENGTH+TOA_LENGTH+TOT_LENGTH..].to_vec();
+        
         if !self.compare_data_checksum() {
             return false;
         }
-
+        
         self.sentiboard_msg.initialized = true;
 
         return true;
@@ -157,13 +158,13 @@ pub fn initialize_sentireader(port_name: String, baud_rate: u32) -> SentiReader 
         protocol_version: 0,
         has_onboard_timestamp: false,
         sentiboard_data: vec![0; BUF_SIZE],
-        sensor_data: vec![0; BUF_SIZE],
         sentiboard_msg: SentiboardMessage {
             sensor_id: 0,
             time_of_validity: 0,
             time_of_arrival: 0,
             time_of_transport: 0,
             onboard_timestamp: 0.0,
+            sensor_data: vec![0; BUF_SIZE],
             initialized: false,
         },
     }
@@ -213,9 +214,6 @@ fn fletcher(data: &[u8]) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // mod dvl_a50_parser;
-    // pub use crate::dvl_a50_parser::a50_parser;
-    // use crate::dvl_a50_parser::DVLMessage;
 
     #[test]
     fn init_sentireader() {
