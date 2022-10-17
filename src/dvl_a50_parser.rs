@@ -1,11 +1,8 @@
-
 // const SENTIBOARD_MSG_ID_DVL : usize = 4; // UART1 port id: 4
 
 use crate::messages::DVLMessage;
 
-
-
-pub fn a50_parser(data: &Vec<u8>) -> DVLMessage{
+pub fn a50_parser(data: &Vec<u8>) -> DVLMessage {
     let string_data = String::from_utf8_lossy(&data);
 
     // let regex = Regex::new(r"(wrz.*)").unwrap();
@@ -21,11 +18,25 @@ pub fn a50_parser(data: &Vec<u8>) -> DVLMessage{
     let status_string_vec: Vec<&str> = string_data_vec[11].split('*').collect();
 
     DVLMessage {
-        velocity: [string_data_vec[1].parse().unwrap(), string_data_vec[2].parse().unwrap(), string_data_vec[3].parse().unwrap()],
+        velocity: [
+            string_data_vec[1].parse().unwrap(),
+            string_data_vec[2].parse().unwrap(),
+            string_data_vec[3].parse().unwrap(),
+        ],
         valid: string_data_vec[4].as_bytes()[0] as char,
         altitude: string_data_vec[5].parse().unwrap(),
         figure_of_merit: string_data_vec[6].parse().unwrap(),
-        covariance: [covariance_string_vec[0].parse().unwrap(), covariance_string_vec[1].parse().unwrap(), covariance_string_vec[2].parse().unwrap(), covariance_string_vec[3].parse().unwrap(), covariance_string_vec[4].parse().unwrap(), covariance_string_vec[5].parse().unwrap(), covariance_string_vec[6].parse().unwrap(), covariance_string_vec[7].parse().unwrap(), covariance_string_vec[8].parse().unwrap()],
+        covariance: [
+            covariance_string_vec[0].parse().unwrap(),
+            covariance_string_vec[1].parse().unwrap(),
+            covariance_string_vec[2].parse().unwrap(),
+            covariance_string_vec[3].parse().unwrap(),
+            covariance_string_vec[4].parse().unwrap(),
+            covariance_string_vec[5].parse().unwrap(),
+            covariance_string_vec[6].parse().unwrap(),
+            covariance_string_vec[7].parse().unwrap(),
+            covariance_string_vec[8].parse().unwrap(),
+        ],
         time_of_validity: string_data_vec[8].parse().unwrap(),
         time_of_transmission: string_data_vec[9].parse().unwrap(),
         time: string_data_vec[10].parse().unwrap(),
