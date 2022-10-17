@@ -1,10 +1,8 @@
-use std::error;
 use std::io::{BufReader, Read};
 use std::time::Duration;
 
-type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
-
-pub mod messages;
+pub mod dvl_a50_parser;
+pub mod stim300_parser;
 
 const HEADER_SIZE: usize = 8;
 const CHECKSUM_SIZE: usize = 2;
@@ -45,35 +43,23 @@ pub struct SentiReader {
 }
 
 impl SentiReader {
-    fn new(port_name: String, baud_rate: u32) -> Self {
-        let port = serialport::new(port_name, baud_rate)
-            .timeout(Duration::from_millis(10000000))
-            .open()
-            .expect("Error: Port should have opened.");
+    fn compare_header_checksum(&self) -> bool {
+        let header_checksum =
+            sentiboard_get_uint16(&self.serial_buf, SENTIBOARD_HEADER_CHECKSUM_POS);
 
-        let reader = BufReader::new(port);
-
-        Self {
-            reader: reader,
-            serial_buf: vec![0; BUF_SIZE],
-            data_length: 0,
-            protocol_version: 0,
-            has_onboard_timestamp: false,
-            sentiboard_data: vec![0; BUF_SIZE],
-            sentiboard_msg: SentiboardMessage {
-                sensor_id: 0,
-                time_of_validity: 0,
-                time_of_arrival: 0,
-                time_of_transport: 0,
-                onboard_timestamp: 0.0,
-                sensor_data: vec![0; BUF_SIZE],
-                initialized: false,
-            },
-        }
+        compare_checksum(&self.serial_buf[0..6], header_checksum)
     }
 
-    fn sync_package(&mut self) -> Result<bool> {
+    fn compare_data_checksum(&self) -> bool {
+        let data_checksum =
+            sentiboard_get_uint16(&self.serial_buf, HEADER_SIZE + self.data_length as usize);
+
+        compare_checksum(&self.sentiboard_data, data_checksum)
+    }
+
+    fn sync_package(&mut self) -> bool {
         let mut max_skip = SENTIBOARD_MAX_SKIP;
+
         let mut buffer: Vec<u8> = vec![0; 2];
 
         self.reader
@@ -83,7 +69,7 @@ impl SentiReader {
         while buffer[0] as char != '^' || !(buffer[1] as char == 'B' || buffer[1] as char == 'C') {
             max_skip = max_skip - 1;
             if max_skip <= 0 {
-                return Err("Negative max skip.")?;
+                return false;
             }
 
             buffer.remove(0);
@@ -102,11 +88,13 @@ impl SentiReader {
 
         self.serial_buf = buffer;
 
-        return Ok(true);
+        return true;
     }
 
-    pub fn read_package(&mut self) -> Result<()> {
-        self.sync_package()?;
+    pub fn read_package(&mut self) -> bool {
+        if !self.sync_package() {
+            return false;
+        }
 
         // read rest of the header (except the first two sync bytes)
         let mut header_buffer: Vec<u8> = vec![0; HEADER_SIZE - 2];
@@ -116,13 +104,15 @@ impl SentiReader {
 
         self.serial_buf.append(&mut header_buffer);
 
-        self.compare_header_checksum()?;
-
-        if self.has_onboard_timestamp {
-            self.sentiboard_msg.onboard_timestamp = get_f64_from_byte_array(&self.serial_buf, 8);
+        if !self.compare_header_checksum() {
+            return false;
         }
 
-        self.data_length = get_u16_from_byte_array(&self.serial_buf, 2);
+        if self.has_onboard_timestamp {
+            self.sentiboard_msg.onboard_timestamp = sentiboard_get_float64(&self.serial_buf, 8);
+        }
+
+        self.data_length = sentiboard_get_uint16(&self.serial_buf, 2);
         self.sentiboard_msg.sensor_id = self.serial_buf[4];
         self.protocol_version = self.serial_buf[5];
 
@@ -135,11 +125,11 @@ impl SentiReader {
         self.serial_buf.append(&mut package_buffer);
 
         self.sentiboard_msg.time_of_validity =
-            get_u32_from_byte_array(&self.serial_buf, SENTIBOARD_TOV_POS);
+            sentiboard_get_uint32(&self.serial_buf, SENTIBOARD_TOV_POS);
         self.sentiboard_msg.time_of_arrival =
-            get_u32_from_byte_array(&self.serial_buf, SENTIBOARD_TOA_POS);
+            sentiboard_get_uint32(&self.serial_buf, SENTIBOARD_TOA_POS);
         self.sentiboard_msg.time_of_transport =
-            get_u32_from_byte_array(&self.serial_buf, SENTIBOARD_TOT_POS);
+            sentiboard_get_uint32(&self.serial_buf, SENTIBOARD_TOT_POS);
 
         // self.sentiboard_data.resize(self.data_length as usize + HEADER_SIZE, 0);
         // self.sentiboard_msg.sensor_data.resize(self.data_length as usize - TOV_LENGTH - TOA_LENGTH - TOT_LENGTH , 0);
@@ -150,59 +140,80 @@ impl SentiReader {
         self.sentiboard_msg.sensor_data =
             self.sentiboard_data[TOV_LENGTH + TOA_LENGTH + TOT_LENGTH..].to_vec();
 
-        self.compare_data_checksum()?;
+        if !self.compare_data_checksum() {
+            return false;
+        }
 
         self.sentiboard_msg.initialized = true;
 
-        return Ok(());
-    }
-
-    fn compare_header_checksum(&self) -> Result<()> {
-        let header_checksum =
-            get_u16_from_byte_array(&self.serial_buf, SENTIBOARD_HEADER_CHECKSUM_POS);
-
-        compare_checksum(&self.serial_buf[0..6], header_checksum)
-    }
-
-    fn compare_data_checksum(&self) -> Result<()> {
-        let data_checksum =
-            get_u16_from_byte_array(&self.serial_buf, HEADER_SIZE + self.data_length as usize);
-
-        compare_checksum(&self.sentiboard_data, data_checksum)
+        return true;
     }
 }
 
-fn compare_checksum(data: &[u8], received_checksum: u16) -> Result<()> {
-    let calc_checksum = fletcher16(data);
+pub fn initialize_sentireader(port_name: String, baud_rate: u32) -> SentiReader {
+    let port = serialport::new(port_name, baud_rate)
+        .timeout(Duration::from_millis(10000000))
+        .open()
+        .expect("Error: ");
+
+    let reader = BufReader::new(port);
+
+    SentiReader {
+        reader: reader,
+        serial_buf: vec![0; BUF_SIZE],
+        data_length: 0,
+        protocol_version: 0,
+        has_onboard_timestamp: false,
+        sentiboard_data: vec![0; BUF_SIZE],
+        sentiboard_msg: SentiboardMessage {
+            sensor_id: 0,
+            time_of_validity: 0,
+            time_of_arrival: 0,
+            time_of_transport: 0,
+            onboard_timestamp: 0.0,
+            sensor_data: vec![0; BUF_SIZE],
+            initialized: false,
+        },
+    }
+}
+
+fn compare_checksum(data: &[u8], received_checksum: u16) -> bool {
+    // let calc_checksum = fletcher::calc_fletcher16(data);
+    let calc_checksum = fletcher(data);
+    // let received_checksum = sentiboard_get_uint16(&self.serial_buf, 6);
+
     if received_checksum != calc_checksum {
-        Err("Checksum should be equal.")?;
+        println!(
+            "Checksums incorrect! Expected: {}, Received: {}",
+            calc_checksum, received_checksum
+        );
+        return false;
     }
-    return Ok(());
+    return true;
 }
 
-fn get_f64_from_byte_array(data: &Vec<u8>, index: usize) -> f64 {
+fn sentiboard_get_float64(data: &Vec<u8>, index: usize) -> f64 {
     let buf: [u8; 8] = data[index..index + 8]
         .try_into()
-        .expect("Slice should have length 8");
+        .expect("slice with incorrect length");
     return f64::from_ne_bytes(buf);
 }
 
-fn get_u16_from_byte_array(data: &Vec<u8>, index: usize) -> u16 {
+fn sentiboard_get_uint16(data: &Vec<u8>, index: usize) -> u16 {
     let buf: [u8; 2] = data[index..index + 2]
         .try_into()
-        .expect("Slice should have length 2");
+        .expect("slice with incorrect length");
     u16::from_ne_bytes(buf)
 }
 
-fn get_u32_from_byte_array(data: &Vec<u8>, index: usize) -> u32 {
+fn sentiboard_get_uint32(data: &Vec<u8>, index: usize) -> u32 {
     let buf: [u8; 4] = data[index..index + 4]
         .try_into()
-        .expect("Slice should have length 4");
+        .expect("slice with incorrect length");
     u32::from_ne_bytes(buf)
 }
 
-// Algorithm for computing a checksum (see https://en.wikipedia.org/wiki/Fletcher%27s_checksum)
-fn fletcher16(data: &[u8]) -> u16 {
+fn fletcher(data: &[u8]) -> u16 {
     let mut sum1: u16 = 0;
     let mut sum2: u16 = 0;
     for i in 0..data.len() {
@@ -218,21 +229,18 @@ mod tests {
 
     #[test]
     fn init_sentireader() {
-        let mut sentireader = SentiReader::new("/dev/ttySentiboard02".to_string(), 115200);
+        let mut sentireader = initialize_sentireader("/dev/tty.usbmodem23103".to_string(), 115200);
 
         for _i in 0..10000 {
-            //println!("{}: {}", _i, sentireader.onboard_timestamp);
-            match sentireader.read_package() {
-                Ok(_) => println!("Read success!"),
-                Err(e) => panic!("Read failed with error: {}", e),
-            }
-
-            // println!(
-            //     "tov {} toa: {}",
-            //     sentireader.sentiboard_msg.time_of_validity,
-            //     sentireader.sentiboard_msg.time_of_arrival
-            // );
-            // println!("toa: {}", sentireader.sentiboard_msg.time_of_arrival);
+            let res = sentireader.read_package();
+            // println!("{}: {}", i, sentireader.onboard_timestamp);
+            assert_eq!(res, true);
+            println!(
+                "tov {} toa: {}",
+                sentireader.sentiboard_msg.time_of_validity,
+                sentireader.sentiboard_msg.time_of_arrival
+            );
+            // println!("toa: {}", sentireader.sentiboard_msg.t\ime_of_arrival);
         }
     }
 }

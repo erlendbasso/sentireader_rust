@@ -1,6 +1,16 @@
 // const SENTIBOARD_MSG_ID_DVL : usize = 4; // UART1 port id: 4
 
-use crate::messages::DVLMessage;
+pub struct DVLMessage {
+    pub velocity: [f32; 3],
+    pub valid: char,
+    pub altitude: f32,
+    pub figure_of_merit: f32,
+    pub covariance: [f32; 9],
+    pub time_of_validity: u64,
+    pub time_of_transmission: u64,
+    pub time: f32,
+    pub status: i32,
+}
 
 pub fn a50_parser(data: &Vec<u8>) -> DVLMessage {
     let string_data = String::from_utf8_lossy(&data);
