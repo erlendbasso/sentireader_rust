@@ -1,23 +1,12 @@
 
 // const SENTIBOARD_MSG_ID_DVL : usize = 4; // UART1 port id: 4
 
-pub struct DVLMessage {
-    velocity: [f32; 3],
-    valid: char,
-    altitude: f32,
-    figure_of_merit: f32,
-    covariance: [f32; 9],
-    time_of_validity: u64,
-    time_of_transmission: u64,
-    time: f32,
-    status: i32,
-}
+use crate::messages::DVLMessage;
 
 
 
 pub fn a50_parser(data: &Vec<u8>) -> DVLMessage{
     let string_data = String::from_utf8_lossy(&data);
-    println!("{}", string_data);
 
     // let regex = Regex::new(r"(wrz.*)").unwrap();
     // let captures = regex.captures(&string_data).unwrap();

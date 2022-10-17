@@ -1,12 +1,9 @@
 use std::time::Duration;
+use std::io::{BufReader, Read};
 
-use std::io::{BufReader, BufRead, Read};
-
-mod dvl_a50_parser;
-pub use crate::dvl_a50_parser::a50_parser;
-use crate::dvl_a50_parser::DVLMessage;
-
-// use fletcher::Fletcher16;
+pub mod messages;
+pub mod dvl_a50_parser;
+pub mod stim300_parser;
 
 const HEADER_SIZE: usize = 8;
 const CHECKSUM_SIZE: usize = 2;
@@ -18,7 +15,6 @@ const SENTIBOARD_TOT_POS: usize = SENTIBOARD_TOA_POS + 4;
 const TOV_LENGTH: usize = 4;
 const TOA_LENGTH: usize = 4;
 const TOT_LENGTH: usize = 4;
-// const BUF_SIZE: usize = 512;
 const BUF_SIZE: usize = 512;
 const SENTIBOARD_MAX_SKIP: usize = 512;
 
@@ -32,6 +28,8 @@ pub struct SentiboardMessage {
 
     pub onboard_timestamp: f64,
 
+    pub sensor_data: Vec<u8>,
+
     pub initialized: bool,
 }
 
@@ -41,7 +39,6 @@ pub struct SentiReader {
     serial_buf: Vec<u8>,
     data_length: u16,
     sentiboard_data: Vec<u8>,
-    pub sensor_data: Vec<u8>,
     protocol_version: u8,
     has_onboard_timestamp: bool,
     pub sentiboard_msg: SentiboardMessage,
@@ -76,8 +73,8 @@ impl SentiReader {
             }
     
             buffer.remove(0);
-            let mut byte: u8 = 0;
 
+            let mut byte: u8 = 0;
             self.reader.read_exact(std::slice::from_mut(&mut byte)).expect("Found no data!");
             buffer.push(byte);
         }
@@ -99,7 +96,7 @@ impl SentiReader {
             return false;
         }
 
-        // read rest of the header
+        // read rest of the header (except the first two sync bytes)
         let mut header_buffer: Vec<u8> = vec![0; HEADER_SIZE - 2];
         self.reader.read_exact(header_buffer.as_mut_slice()).expect("Found no data!");
         
@@ -128,17 +125,17 @@ impl SentiReader {
         self.sentiboard_msg.time_of_arrival = sentiboard_get_uint32(&self.serial_buf, SENTIBOARD_TOA_POS);
         self.sentiboard_msg.time_of_transport = sentiboard_get_uint32(&self.serial_buf, SENTIBOARD_TOT_POS);
 
-        self.sentiboard_data.resize(self.data_length as usize + HEADER_SIZE, 0);
-        self.sensor_data.resize(self.data_length as usize - TOV_LENGTH - TOA_LENGTH - TOT_LENGTH , 0);
+        // self.sentiboard_data.resize(self.data_length as usize + HEADER_SIZE, 0);
+        // self.sentiboard_msg.sensor_data.resize(self.data_length as usize - TOV_LENGTH - TOA_LENGTH - TOT_LENGTH , 0);
 
         self.sentiboard_data = self.serial_buf[HEADER_SIZE..(self.data_length as usize + HEADER_SIZE)].to_vec(); 
 
-        self.sensor_data = self.sentiboard_data[TOV_LENGTH+TOA_LENGTH+TOT_LENGTH..].to_vec();
-
+        self.sentiboard_msg.sensor_data = self.sentiboard_data[TOV_LENGTH+TOA_LENGTH+TOT_LENGTH..].to_vec();
+        
         if !self.compare_data_checksum() {
             return false;
         }
-
+        
         self.sentiboard_msg.initialized = true;
 
         return true;
@@ -161,13 +158,13 @@ pub fn initialize_sentireader(port_name: String, baud_rate: u32) -> SentiReader 
         protocol_version: 0,
         has_onboard_timestamp: false,
         sentiboard_data: vec![0; BUF_SIZE],
-        sensor_data: vec![0; BUF_SIZE],
         sentiboard_msg: SentiboardMessage {
             sensor_id: 0,
             time_of_validity: 0,
             time_of_arrival: 0,
             time_of_transport: 0,
             onboard_timestamp: 0.0,
+            sensor_data: vec![0; BUF_SIZE],
             initialized: false,
         },
     }
@@ -214,8 +211,6 @@ fn fletcher(data: &[u8]) -> u16 {
 
 
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,29 +225,6 @@ mod tests {
             assert_eq!(res, true);
             println!("tov {} toa: {}", sentireader.sentiboard_msg.time_of_validity, sentireader.sentiboard_msg.time_of_arrival);
             // println!("toa: {}", sentireader.sentiboard_msg.t\ime_of_arrival);
-        }
-        // let res = sentireader.read_package();
-
-        // println!("res: {}", res);
-        // assert_eq!(res, true);
-
-        // assert_eq!(sentireader.port_name, ""/dev/tty.usbmodem23103"");
-        // assert_eq!(sentireader.baud_rate, 115200);
-    }
-    #[test]
-    fn test_dvl_a50_parser() {
-        let mut sentireader = initialize_sentireader("/dev/tty.usbmodem23103".to_string(), 115200);
-
-        for _i in 0..100 {
-            let res = sentireader.read_package();
-            // println!("{}: {}", i, sentireader.onboard_timestamp);
-            // assert_eq!(res, true);
-            if res {
-                let dvl_msg: DVLMessage = dvl_a50_parser::a50_parser(&sentireader.sensor_data);
-            }
-            println!("Has onboard timestamp: {}", sentireader.has_onboard_timestamp);
-            println!("tov {} toa: {}", sentireader.sentiboard_msg.time_of_validity, sentireader.sentiboard_msg.time_of_arrival);
-            println!("sensor id: {}", sentireader.sentiboard_msg.sensor_id);
         }
     }
 }
