@@ -12,7 +12,7 @@ pub struct DVLMessage {
     pub status: i32,
 }
 
-pub fn a50_parser(data: &Vec<u8>) -> DVLMessage {
+pub fn parse_a50_data(data: &Vec<u8>) -> DVLMessage {
     let string_data = String::from_utf8_lossy(&data);
 
     // let regex = Regex::new(r"(wrz.*)").unwrap();
@@ -26,6 +26,8 @@ pub fn a50_parser(data: &Vec<u8>) -> DVLMessage {
 
     let covariance_string_vec: Vec<&str> = string_data_vec[7].split(';').collect();
     let status_string_vec: Vec<&str> = string_data_vec[11].split('*').collect();
+
+    let crc = &data[59..63];
 
     DVLMessage {
         velocity: [
