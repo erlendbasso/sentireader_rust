@@ -5,12 +5,50 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Debug ALL unit tests in library",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--lib",
+                    "--package=sentireader_rust"
+                ],
+                "filter": {
+                    "name": "sentireader_rust",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "type": "lldb",
             "request": "launch",
             "name": "Debug",
-            "program": "${workspaceFolder}/<executable file>",
+            "program": "${workspaceFolder}/target/debug/${workspaceFolderBasename}",
             "args": [],
             "cwd": "${workspaceFolder}"
-        }
+        },
+        {
+            "name": "Debug integration test in library",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "-p",
+                    "sentireader_rust",
+                    "--test",
+                    "integration_test"
+                ],
+                "filter": {
+                    "name": "sentireader_rust",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
     ]
 }

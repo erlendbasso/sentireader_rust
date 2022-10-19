@@ -1,3 +1,4 @@
+use crate::utils::*;
 use std::error;
 use std::io::{BufReader, Read};
 use std::time::Duration;
@@ -194,37 +195,6 @@ fn compare_checksum(data: &[u8], received_checksum: u16) -> Result<()> {
     Ok(())
 }
 
-fn get_f64_from_byte_array(data: &Vec<u8>, index: usize) -> f64 {
-    let buf: [u8; 8] = data[index..index + 8]
-        .try_into()
-        .expect("Slice should be of length 8.");
-    return f64::from_ne_bytes(buf);
-}
-
-fn get_u16_from_byte_array(data: &Vec<u8>, index: usize) -> u16 {
-    let buf: [u8; 2] = data[index..index + 2]
-        .try_into()
-        .expect("Slice should be of length 2.");
-    u16::from_ne_bytes(buf)
-}
-
-fn get_u32_from_byte_array(data: &Vec<u8>, index: usize) -> u32 {
-    let buf: [u8; 4] = data[index..index + 4]
-        .try_into()
-        .expect("Slice should be of length 4.");
-    u32::from_ne_bytes(buf)
-}
-
-fn fletcher16(data: &[u8]) -> u16 {
-    let mut sum1: u16 = 0;
-    let mut sum2: u16 = 0;
-    for i in 0..data.len() {
-        sum1 = (sum1 + data[i] as u16) % 256;
-        sum2 = (sum2 + sum1) % 256;
-    }
-    (sum2 << 8) | sum1
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,7 +203,7 @@ mod tests {
     fn init_sentireader() {
         let mut sentireader = SentiReader::new("/dev/ttySentiboard02".to_string(), 115200);
 
-        for _i in 0..5000 {
+        for _i in 0..100 {
             let sentiboard_msg = sentireader.read_package().unwrap();
             println!("{}, msg: {:?}", _i, sentiboard_msg.onboard_timestamp);
             println!(
