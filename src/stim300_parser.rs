@@ -2,7 +2,7 @@ use core::num;
 use crc::{Algorithm, Crc, CRC_32_MPEG_2};
 use std::error;
 
-use crate::utils::get_u32_from_byte_array;
+use crate::utils::get_u32_from_be_byte_array;
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 enum GyroOutput {
@@ -58,17 +58,6 @@ pub struct IMUMessage {
 }
 
 const CHECKSUM_ALGORITHM: Crc<u32> = Crc::<u32>::new(&CRC_32_MPEG_2);
-const CUSTOM_ALG: Algorithm<u32> = Algorithm {
-    width: 32,
-    poly: 0x04C11DB7,
-    init: 0xffffffff,
-    refin: true,
-    refout: false,
-    xorout: 0x00000000,
-    check: 0x00000000, //0x0376e6e7, //0x0376e6e7,
-    residue: 0x00000000,
-};
-const CRC: Crc<u32> = Crc::<u32>::new(&CUSTOM_ALG);
 
 // "OUTPUT_START_POS", "OUTPUT_END_POS", "OUTPUT_LENGTH" denote the
 // byte positions and length in the input data (byte array), respectively.
@@ -279,9 +268,9 @@ fn compute_angular_rate_vector(data: &Vec<u8>) -> Option<[f32; 3]> {
 }
 
 fn convert_gyro_output_to_angular_rate(output: &[u8]) -> f32 {
-    let ar1: f32 = output[1].into();
-    let ar2: f32 = output[2].into();
-    let ar3: f32 = output[3].into();
+    let ar1: f32 = output[0].into();
+    let ar2: f32 = output[1].into();
+    let ar3: f32 = output[2].into();
     let ar1_msb = ((output[1] >> 7_u8) & 1_u8) as f32;
     let div = get_gyro_output_divisor();
     let base: f32 = 2.0;
@@ -314,9 +303,9 @@ fn compute_acceleration_vector(data: &Vec<u8>) -> Option<[f32; 3]> {
 }
 
 fn convert_accmeter_output_to_acceleration(output: &[u8]) -> f32 {
-    let acc1: f32 = output[1].into();
-    let acc2: f32 = output[2].into();
-    let acc3: f32 = output[3].into();
+    let acc1: f32 = output[0].into();
+    let acc2: f32 = output[1].into();
+    let acc3: f32 = output[2].into();
     let acc1_msb = ((output[1] >> 7_u8) & 1_u8) as f32;
     let div = get_accmeter_output_divisor();
     let base: f32 = 2.0;
@@ -361,9 +350,9 @@ fn compute_inclination_vector(data: &Vec<u8>, start_index: usize) -> Option<[f32
 }
 
 fn convert_inclmeter_output_to_inclination(output: &[u8]) -> f32 {
-    let acc1: f32 = output[1].into();
-    let acc2: f32 = output[2].into();
-    let acc3: f32 = output[3].into();
+    let acc1: f32 = output[0].into();
+    let acc2: f32 = output[1].into();
+    let acc3: f32 = output[2].into();
     let acc1_msb = ((output[1] >> 7_u8) & 1_u8) as f32;
     let div = get_inclmeter_output_divisor();
     let base: f32 = 2.0;
@@ -394,8 +383,8 @@ fn compute_temperature(data: &Vec<u8>, start_index: usize) -> Option<[f32; 3]> {
     ])
 }
 fn convert_temp_meas_output_to_temperature(output: &[u8]) -> f32 {
-    let t1: f32 = output[1].into();
-    let t2: f32 = output[2].into();
+    let t1: f32 = output[0].into();
+    let t2: f32 = output[1].into();
     let t1_msb = ((output[1] >> 7_u8) & 1_u8) as f32;
     let base: f32 = 2.0;
     return (t1 * base.powf(8.0) + t2 - t1_msb * base.powf(16.0)) / base.powf(8.0);
@@ -409,18 +398,15 @@ fn compute_latency(data: &[u8]) -> Option<f32> {
 }
 
 fn compute_checksum(data: &Vec<u8>, data_length: usize, num_crc_dummy_bytes: usize) -> u32 {
-    let crc_data = &data[..data_length - 4];
-    let mut crc_data: Vec<u8> = crc_data.iter().cloned().collect();
+    let mut crc_data: Vec<u8> = data[..data_length - 4].iter().cloned().collect();
     crc_data.resize(crc_data.len() + num_crc_dummy_bytes, 0);
     println!("crc_data: {:?}", crc_data);
-    let mut digest = CRC.digest();
-    digest.update(&crc_data.as_slice());
-    return digest.finalize(); //CHECKSUM_ALGORITHM.checksum(&crc_data.as_slice());
+    CHECKSUM_ALGORITHM.checksum(&crc_data.as_slice())
 }
 
 fn get_received_checksum(data: &Vec<u8>, data_length: usize) -> u32 {
     println!("relevant data: {:?}", &data[data_length - 4..data_length]);
-    return get_u32_from_byte_array(data, data_length - 4);
+    return get_u32_from_be_byte_array(data, data_length - 4);
 }
 
 fn compare_checksums(computed_checksum: u32, received_checksum: u32) -> Result<()> {
