@@ -271,7 +271,7 @@ fn convert_gyro_output_to_angular_rate(output: &[u8]) -> f32 {
     let ar1: f32 = output[0].into();
     let ar2: f32 = output[1].into();
     let ar3: f32 = output[2].into();
-    let ar1_msb = ((output[1] >> 7_u8) & 1_u8) as f32;
+    let ar1_msb = ((output[0] >> 7_u8) & 1_u8) as f32;
     let div = get_gyro_output_divisor();
     let base: f32 = 2.0;
     return (ar1 * base.powf(16.0) + ar2 * base.powf(8.0) + ar3 - ar1_msb * base.powf(24.0)) / div;
@@ -306,7 +306,7 @@ fn convert_accmeter_output_to_acceleration(output: &[u8]) -> f32 {
     let acc1: f32 = output[0].into();
     let acc2: f32 = output[1].into();
     let acc3: f32 = output[2].into();
-    let acc1_msb = ((output[1] >> 7_u8) & 1_u8) as f32;
+    let acc1_msb = ((output[0] >> 7_u8) & 1_u8) as f32;
     let div = get_accmeter_output_divisor();
     let base: f32 = 2.0;
     return (acc1 * base.powf(16.0) + acc2 * base.powf(8.0) + acc3 - acc1_msb * base.powf(24.0))
@@ -353,7 +353,7 @@ fn convert_inclmeter_output_to_inclination(output: &[u8]) -> f32 {
     let acc1: f32 = output[0].into();
     let acc2: f32 = output[1].into();
     let acc3: f32 = output[2].into();
-    let acc1_msb = ((output[1] >> 7_u8) & 1_u8) as f32;
+    let acc1_msb = ((output[0] >> 7_u8) & 1_u8) as f32;
     let div = get_inclmeter_output_divisor();
     let base: f32 = 2.0;
     return (acc1 * base.powf(16.0) + acc2 * base.powf(8.0) + acc3 - acc1_msb * base.powf(24.0))
@@ -385,7 +385,7 @@ fn compute_temperature(data: &Vec<u8>, start_index: usize) -> Option<[f32; 3]> {
 fn convert_temp_meas_output_to_temperature(output: &[u8]) -> f32 {
     let t1: f32 = output[0].into();
     let t2: f32 = output[1].into();
-    let t1_msb = ((output[1] >> 7_u8) & 1_u8) as f32;
+    let t1_msb = ((output[0] >> 7_u8) & 1_u8) as f32;
     let base: f32 = 2.0;
     return (t1 * base.powf(8.0) + t2 - t1_msb * base.powf(16.0)) / base.powf(8.0);
 }
