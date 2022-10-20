@@ -11,6 +11,7 @@
             "cargo": {
                 "args": [
                     "test",
+                    "--nocapture",
                     "--lib",
                     "--package=sentireader_rust"
                 ],
@@ -31,20 +32,17 @@
             "cwd": "${workspaceFolder}"
         },
         {
-            "name": "Debug integration test in library",
+            "name": "Debug all tests in library",
             "type": "lldb",
             "request": "launch",
             "cargo": {
                 "args": [
                     "test",
-                    "-p",
-                    "sentireader_rust",
-                    "--test",
-                    "integration_test"
+                    "--",
+                    "--nocapture"
                 ],
                 "filter": {
                     "name": "sentireader_rust",
-                    "kind": "lib"
                 }
             },
             "args": [],

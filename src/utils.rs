@@ -13,7 +13,6 @@ pub fn get_u16_from_byte_array(data: &Vec<u8>, index: usize) -> u16 {
 }
 
 pub fn get_u32_from_byte_array(data: &Vec<u8>, index: usize) -> u32 {
-    println!("data: {:?}", &data[index..index + 4]);
     let buf: [u8; 4] = data[index..index + 4]
         .try_into()
         .expect("Slice should be of length 4.");
@@ -21,7 +20,6 @@ pub fn get_u32_from_byte_array(data: &Vec<u8>, index: usize) -> u32 {
 }
 
 pub fn get_u32_from_be_byte_array(data: &Vec<u8>, index: usize) -> u32 {
-    println!("data: {:?}", &data[index..index + 4]);
     let buf: [u8; 4] = data[index..index + 4]
         .try_into()
         .expect("Slice should be of length 4.");

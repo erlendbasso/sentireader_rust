@@ -1,5 +1,4 @@
-use core::num;
-use crc::{Algorithm, Crc, CRC_32_MPEG_2};
+use crc::{Crc, CRC_32_MPEG_2};
 use std::error;
 
 use crate::utils::get_u32_from_be_byte_array;
@@ -26,8 +25,9 @@ enum InclMeterOutput {
 }
 
 // R: Rate, A: Acceleration, I: Inclination, T: Temperature
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub enum IMUMode {
+    #[default]
     R,
     RA,
     RI,
@@ -38,18 +38,18 @@ pub enum IMUMode {
     RAIT,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct IMUMessage {
     pub mode: IMUMode,
     pub angular_velocity: Option<[f32; 3]>,
-    pub acceleration: Option<[f32; 3]>,
-    pub inclination: Option<[f32; 3]>,
     pub gyro_status: Option<u8>,
     pub gyro_temp: Option<[f32; 3]>,
     pub gyro_temp_status: Option<u8>,
+    pub acceleration: Option<[f32; 3]>,
     pub accmeter_status: Option<u8>,
     pub accmeter_temp: Option<[f32; 3]>,
     pub accmeter_temp_status: Option<u8>,
+    pub inclination: Option<[f32; 3]>,
     pub inclmeter_status: Option<u8>,
     pub inclmeter_temp: Option<[f32; 3]>,
     pub inclmeter_temp_status: Option<u8>,
@@ -64,7 +64,7 @@ const CHECKSUM_ALGORITHM: Crc<u32> = Crc::<u32>::new(&CRC_32_MPEG_2);
 // Note that the const values defined below are for the normal mode diagram (0xAF)
 // such that we subtract 10 bytes per measurement missing (for inclination and temperature position indices)
 const MIN_DATA_LENGTH: usize = 18;
-const G_RANGE: &str = "2g";
+const G_RANGE: &str = "10g";
 const GYRO_OUTPUT_TYPE: GyroOutput = GyroOutput::AngularRate;
 const GYRO_OUTPUT_START_POS: usize = 1;
 const GYRO_STATUS_POS: usize = 10;
@@ -83,16 +83,11 @@ const INCLMETER_TEMP_STATUS_POS: usize = 51;
 const SENSOR_AXIS_OUTPUT_BYTE_LENGTH: usize = 3;
 const TEMP_OUTPUT_BYTE_LENGTH: usize = 2;
 
+#[doc = "parse_stim300_data"]
 pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
-    println!("STIM300 data: {:?}", data);
-
     assert!(data.len() >= MIN_DATA_LENGTH); // minimum number of bytes
     let (imu_mode, data_length, num_crc_dummy_bytes) = get_data_information(data[0])?;
 
-    println!(
-        "imu_mode: {:?}, num_crc_dummy_bytes {}",
-        imu_mode, num_crc_dummy_bytes
-    );
     let computed_checksum = compute_checksum(data, data_length, num_crc_dummy_bytes);
     let received_checksum = get_received_checksum(data, data_length);
     compare_checksums(computed_checksum, received_checksum)?;
@@ -238,6 +233,8 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
 }
 
 fn get_data_information(data_identifier: u8) -> Result<(IMUMode, usize, usize)> {
+    //! INPUTS: A byte containing information on the data package
+    //! OUTPUTS: a tuple of (IMUMode, data_length, num_crc_dummy_bytes)
     match data_identifier {
         0x90 => Ok((IMUMode::R, 18, 2)),
         0x91 => Ok((IMUMode::RA, 28, 0)),
@@ -277,6 +274,17 @@ fn convert_gyro_output_to_angular_rate(output: &[u8]) -> f32 {
     return (ar1 * base.powf(16.0) + ar2 * base.powf(8.0) + ar3 - ar1_msb * base.powf(24.0)) / div;
 }
 
+fn convert_accmeter_output_to_acceleration(output: &[u8]) -> f32 {
+    let acc1: f32 = output[0].into();
+    let acc2: f32 = output[1].into();
+    let acc3: f32 = output[2].into();
+    let acc1_msb = ((output[0] >> 7_u8) & 1_u8) as f32;
+    let div = get_accmeter_output_divisor();
+    let base: f32 = 2.0;
+    return (acc1 * base.powf(16.0) + acc2 * base.powf(8.0) + acc3 - acc1_msb * base.powf(24.0))
+        / div;
+}
+
 fn get_gyro_output_divisor() -> f32 {
     let exponent = match GYRO_OUTPUT_TYPE {
         GyroOutput::AngularRate | GyroOutput::AverageAngularRate => 14.0,
@@ -300,17 +308,6 @@ fn compute_acceleration_vector(data: &Vec<u8>) -> Option<[f32; 3]> {
                 ..ACCMETER_OUTPUT_START_POS + 3 * SENSOR_AXIS_OUTPUT_BYTE_LENGTH],
         ),
     ])
-}
-
-fn convert_accmeter_output_to_acceleration(output: &[u8]) -> f32 {
-    let acc1: f32 = output[0].into();
-    let acc2: f32 = output[1].into();
-    let acc3: f32 = output[2].into();
-    let acc1_msb = ((output[0] >> 7_u8) & 1_u8) as f32;
-    let div = get_accmeter_output_divisor();
-    let base: f32 = 2.0;
-    return (acc1 * base.powf(16.0) + acc2 * base.powf(8.0) + acc3 - acc1_msb * base.powf(24.0))
-        / div;
 }
 
 fn get_accmeter_output_divisor() -> f32 {
@@ -400,12 +397,12 @@ fn compute_latency(data: &[u8]) -> Option<f32> {
 fn compute_checksum(data: &Vec<u8>, data_length: usize, num_crc_dummy_bytes: usize) -> u32 {
     let mut crc_data: Vec<u8> = data[..data_length - 4].iter().cloned().collect();
     crc_data.resize(crc_data.len() + num_crc_dummy_bytes, 0);
-    println!("crc_data: {:?}", crc_data);
+    //println!("crc_data: {:?}", crc_data);
     CHECKSUM_ALGORITHM.checksum(&crc_data.as_slice())
 }
 
 fn get_received_checksum(data: &Vec<u8>, data_length: usize) -> u32 {
-    println!("relevant data: {:?}", &data[data_length - 4..data_length]);
+    //println!("relevant data: {:?}", &data[data_length - 4..data_length]);
     return get_u32_from_be_byte_array(data, data_length - 4);
 }
 
@@ -429,14 +426,41 @@ mod tests {
 
     #[test]
     fn test_stim300_parser() {
-        // let data: Vec<u8> = vec![
-        //     0x93, 0x00, 0x11, 0x84, 0xFF, 0x23, 0x33, 0x01, 0x15, 0x25, 0x27,
-        // ];
+        let data: Vec<u8> = vec![
+            147, 0, 2, 143, 255, 255, 27, 255, 251, 225, 0, 255, 231, 228, 0, 24, 145, 7, 246, 137,
+            0, 255, 52, 121, 0, 39, 132, 64, 23, 20, 0, 217, 1, 244, 57, 44, 117, 39,
+        ];
 
-        // let imu_msg = IMUMessage {
-        //     angular_velocity: [0.003, 0.003, 0.003],
-        //     acceleration: [0.003, 0.003, 0.003],
-        // };
+        let imu_msg = match parse_stim300_data(&data) {
+            Ok(imu_msg) => imu_msg,
+            Err(e) => IMUMessage {
+                ..Default::default()
+            },
+        };
+
+        println!("imu_msg = {:?}", imu_msg);
+
+        println!(
+            "accl: {:?}\n ar: {:?}\n",
+            imu_msg.acceleration.unwrap(),
+            imu_msg.angular_velocity.unwrap()
+        );
+
+        // assert_eq!(
+        //     imu_msg.acceleration.unwrap(),
+        //     [-0.01177216, 0.01199532, 0.99537849]
+        // );
+
+        // assert_eq!(
+        //     imu_msg.angular_velocity.unwrap(),
+        //     [0.03997803, -0.01397705, -0.06439209]
+        // );
+
+        // assert_eq!(imu_msg.latency.unwrap(), 62465.0);
+        // should match
+        // fps: 0.000000 0	697727900	accl:[-0.01177216  0.01199532  0.99537849]
+        // ar:[ 0.03997803 -0.01397705 -0.06439209]
+        // latency: 62465.0
 
         //assert_eq!(parse_stim300_data(&data), imu_msg);
     }
