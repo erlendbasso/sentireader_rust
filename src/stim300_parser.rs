@@ -403,7 +403,7 @@ fn compute_checksum(data: &Vec<u8>, data_length: usize, num_crc_dummy_bytes: usi
 
 fn get_received_checksum(data: &Vec<u8>, data_length: usize) -> u32 {
     //println!("relevant data: {:?}", &data[data_length - 4..data_length]);
-    return get_u32_from_be_byte_array(data, data_length - 4);
+    get_u32_from_be_byte_array(data, data_length - 4)
 }
 
 fn compare_checksums(computed_checksum: u32, received_checksum: u32) -> Result<()> {
