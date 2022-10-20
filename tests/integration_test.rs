@@ -4,33 +4,35 @@ mod tests {
     use sentireader_rust::{dvl_a50_parser, sentireader, stim300_parser};
     #[test]
     fn test_dvl_a50_parser() {
-        // let mut sentireader =
-        //     sentireader::SentiReader::new("/dev/ttySentiboard02".to_string(), 115200);
+        let mut sentireader =
+            sentireader::SentiReader::new("/dev/ttySentiboard02".to_string(), 115200);
 
-        //const SENTIBOARD_MSG_ID_DVL: usize = 4; // UART1 port id: 4
+        const SENTIBOARD_MSG_ID_DVL: usize = 4; // UART1 port id: 4
 
-        // for _i in 0..10000 {
-        //     let sentiboard_msg = sentireader.read_package().unwrap();
-        //     println!("{}, msg: {:?}", _i, sentiboard_msg.onboard_timestamp);
-        //     println!(
-        //         "sensor ID {:?}, tov {:?}, toa: {:?}",
-        //         sentiboard_msg.sensor_id,
-        //         sentiboard_msg.time_of_validity,
-        //         sentiboard_msg.time_of_arrival
-        //     );
+        for _i in 0..10000 {
+            let sentiboard_msg = sentireader.read_package().unwrap();
+            println!("{}, msg: {:?}", _i, sentiboard_msg.onboard_timestamp);
+            println!(
+                "sensor ID {:?}, tov {:?}, toa: {:?}",
+                sentiboard_msg.sensor_id,
+                sentiboard_msg.time_of_validity,
+                sentiboard_msg.time_of_arrival
+            );
 
-        //     let dvl_msg: dvl_a50_parser::DVLMessage;
-        //     if res && sentireader.sentiboard_msg.sensor_id == SENTIBOARD_MSG_ID_DVL as u8 {
-        //         println!(
-        //             "data: {}",
-        //             String::from_utf8_lossy(&sentireader.sentiboard_msg.sensor_data)
-        //         );
-        //         dvl_msg = sentireader_rust::dvl_a50_parser::a50_parser(
-        //             &sentireader.sentiboard_msg.sensor_data,
-        //         );
-        //         println!("Vel: {:?}", dvl_msg.velocity);
-        //     }
-        // }
+            let sensor_data = sentiboard_msg.sensor_data.unwrap();
+
+            let dvl_msg: dvl_a50_parser::DVLMessage;
+            if sentiboard_msg.sensor_id.unwrap() == SENTIBOARD_MSG_ID_DVL as u8 {
+                println!(
+                    "data: {}",
+                    String::from_utf8_lossy(&sensor_data)
+                );
+                dvl_msg = sentireader_rust::dvl_a50_parser::parse_a50_data(
+                    &sensor_data,
+                );
+                println!("Vel: {:?}", dvl_msg.velocity);
+            }
+        }
     }
 
     #[test]
