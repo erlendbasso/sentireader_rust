@@ -87,7 +87,10 @@ const TEMP_OUTPUT_BYTE_LENGTH: usize = 2;
 pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
     assert!(data.len() >= MIN_DATA_LENGTH); // minimum number of bytes
     let (imu_mode, data_length, num_crc_dummy_bytes) = get_data_information(data[0])?;
-
+    println!(
+        "imu_mode: {:?}, data_length = {}, n_crc_dummy_bytes = {}",
+        imu_mode, data_length, num_crc_dummy_bytes
+    );
     let computed_checksum = compute_checksum(data, data_length, num_crc_dummy_bytes);
     let received_checksum = get_received_checksum(data, data_length);
     compare_checksums(computed_checksum, received_checksum)?;
@@ -407,7 +410,7 @@ fn get_received_checksum(data: &Vec<u8>, data_length: usize) -> u32 {
 }
 
 fn compare_checksums(computed_checksum: u32, received_checksum: u32) -> Result<()> {
-    assert_eq!(computed_checksum, received_checksum);
+    //assert_eq!(computed_checksum, received_checksum);
     match computed_checksum == received_checksum {
         true => Ok(()),
         false => {

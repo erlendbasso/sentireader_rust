@@ -57,7 +57,7 @@ mod tests {
             let imu_msg =
                 match stim300_parser::parse_stim300_data(&sentiboard_msg.sensor_data.unwrap()) {
                     Ok(imu_msg) => imu_msg,
-                    Err(e) => IMUMessage {
+                    Err(_) => IMUMessage {
                         ..Default::default()
                     },
                 };
