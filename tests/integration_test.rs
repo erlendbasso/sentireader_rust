@@ -38,7 +38,7 @@ mod tests {
     #[test]
     fn test_stim300_parser() -> Result<()> {
         let mut sentireader =
-            sentireader::SentiReader::new("/dev/ttySentiboard02".to_string(), 115200);
+            sentireader::SentiReader::new("/dev/tty.usbmodem223103".to_string(), 115200);
 
         //const SENTIBOARD_MSG_ID_DVL: usize = 4; // UART1 port id: 4
         let mut avg_acc: [f32; 3] = [0.0, 0.0, 0.0];

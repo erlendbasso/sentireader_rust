@@ -53,7 +53,7 @@ pub struct IMUMessage {
     pub inclmeter_status: Option<u8>,
     pub inclmeter_temp: Option<[f32; 3]>,
     pub inclmeter_temp_status: Option<u8>,
-    pub count: Option<u8>,
+    pub sample_count: Option<u8>,
     pub latency: Option<f32>,
 }
 
@@ -107,7 +107,7 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
             inclmeter_status: None,
             inclmeter_temp: None,
             inclmeter_temp_status: None,
-            count: Some(data[data_length - 7]),
+            sample_count: Some(data[data_length - 7]),
             latency: compute_latency(&data[data_length - 6..data_length - 4]),
         }),
         IMUMode::RA => Ok(IMUMessage {
@@ -124,7 +124,7 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
             inclmeter_status: None,
             inclmeter_temp: None,
             inclmeter_temp_status: None,
-            count: Some(data[data_length - 7]),
+            sample_count: Some(data[data_length - 7]),
             latency: compute_latency(&data[data_length - 6..data_length - 4]),
         }),
         IMUMode::RI => Ok(IMUMessage {
@@ -141,7 +141,7 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
             inclmeter_status: Some(data[INCLMETER_STATUS_POS - 10]),
             inclmeter_temp: None,
             inclmeter_temp_status: None,
-            count: Some(data[data_length - 7]),
+            sample_count: Some(data[data_length - 7]),
             latency: compute_latency(&data[data_length - 6..data_length - 4]),
         }),
         IMUMode::RAI => Ok(IMUMessage {
@@ -158,7 +158,7 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
             inclmeter_status: Some(data[INCLMETER_STATUS_POS]),
             inclmeter_temp: None,
             inclmeter_temp_status: None,
-            count: Some(data[data_length - 7]),
+            sample_count: Some(data[data_length - 7]),
             latency: compute_latency(&data[data_length - 6..data_length - 4]),
         }),
         IMUMode::RT => Ok(IMUMessage {
@@ -175,7 +175,7 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
             inclmeter_status: None,
             inclmeter_temp: None,
             inclmeter_temp_status: None,
-            count: Some(data[data_length - 7]),
+            sample_count: Some(data[data_length - 7]),
             latency: compute_latency(&data[data_length - 6..data_length - 4]),
         }),
         IMUMode::RAT => Ok(IMUMessage {
@@ -192,7 +192,7 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
             inclmeter_status: None,
             inclmeter_temp: None,
             inclmeter_temp_status: None,
-            count: Some(data[data_length - 7]),
+            sample_count: Some(data[data_length - 7]),
             latency: compute_latency(&data[data_length - 6..data_length - 4]),
         }),
         IMUMode::RIT => Ok(IMUMessage {
@@ -209,7 +209,7 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
             inclmeter_status: Some(data[INCLMETER_STATUS_POS - 10]),
             inclmeter_temp: compute_temperature(data, INCLMETER_TEMP_OUTPUT_START_POS),
             inclmeter_temp_status: Some(data[INCLMETER_TEMP_STATUS_POS]),
-            count: Some(data[data_length - 7]),
+            sample_count: Some(data[data_length - 7]),
             latency: compute_latency(&data[data_length - 6..data_length - 4]),
         }),
         IMUMode::RAIT => Ok(IMUMessage {
@@ -226,7 +226,7 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
             inclmeter_status: Some(data[INCLMETER_STATUS_POS]),
             inclmeter_temp: compute_temperature(data, INCLMETER_TEMP_OUTPUT_START_POS),
             inclmeter_temp_status: Some(data[INCLMETER_TEMP_STATUS_POS]),
-            count: Some(data[data_length - 7]),
+            sample_count: Some(data[data_length - 7]),
             latency: compute_latency(&data[data_length - 6..data_length - 4]),
         }),
     }
