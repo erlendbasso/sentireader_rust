@@ -57,6 +57,12 @@ pub struct IMUMessage {
     pub latency: Option<f32>,
 }
 
+impl IMUMessage {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 const CHECKSUM_ALGORITHM: Crc<u32> = Crc::<u32>::new(&CRC_32_MPEG_2);
 
 // "OUTPUT_START_POS", "OUTPUT_END_POS", "OUTPUT_LENGTH" denote the

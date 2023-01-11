@@ -1,0 +1,5 @@
+# .cargo/config
+rustflags = [
+  "-C", "debuginfo=2",
+  "-Z", "build-std=core,std,alloc"
+]
