@@ -5,6 +5,13 @@ pub fn get_f64_from_byte_array(data: &Vec<u8>, index: usize) -> f64 {
     return f64::from_ne_bytes(buf);
 }
 
+pub fn get_f32_from_byte_array(data: &Vec<u8>, index: usize) -> f32 {
+    let buf: [u8; 4] = data[index..index + 4]
+        .try_into()
+        .expect("Slice should be of length 4.");
+    return f32::from_ne_bytes(buf);
+}
+
 pub fn get_u16_from_byte_array(data: &Vec<u8>, index: usize) -> u16 {
     let buf: [u8; 2] = data[index..index + 2]
         .try_into()
