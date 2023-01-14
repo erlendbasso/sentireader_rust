@@ -106,7 +106,7 @@ fn get_data_information(data_id: u8) -> DataID {
 }
 
 
-pub fn parse_nucleus_data(data: &Vec<u8>) -> (ExtendedDVLMessage, AltimeterMessage) {
+pub fn parse_nucleus_data(data: &Vec<u8>) -> (DataID, ExtendedDVLMessage, AltimeterMessage) {
     // println!("Size: {}", data.len());
 
     // println!("Header size: {}", data[1]);
@@ -126,18 +126,21 @@ pub fn parse_nucleus_data(data: &Vec<u8>) -> (ExtendedDVLMessage, AltimeterMessa
     match data_id {
         DataID::BottomTrackData => {
             (
+                data_id,
                 parse_track_data(&data[HEADER_SIZE..].to_vec(), TrackMode::BottomTrack), 
                 AltimeterMessage {..Default::default() }
             )
         },
         DataID::WaterTrackData => {
             (
+                data_id,
                 parse_track_data(&data[HEADER_SIZE..].to_vec(), TrackMode::WaterTrack), 
                 AltimeterMessage {..Default::default() }
             )
         },
         DataID::AltimeterData => {
             (
+                data_id,
                 ExtendedDVLMessage { ..Default::default()}, 
                 parse_altimeter_data(&data[HEADER_SIZE..].to_vec())
             )
@@ -145,6 +148,7 @@ pub fn parse_nucleus_data(data: &Vec<u8>) -> (ExtendedDVLMessage, AltimeterMessa
         _ => {
             // println!("Unknown data series id: {}", data_series_id);
             (
+                data_id,
                 ExtendedDVLMessage { ..Default::default()}, 
                 AltimeterMessage {..Default::default()}
             )
