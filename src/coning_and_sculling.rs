@@ -48,7 +48,7 @@ impl ConingAndSculling {
         let delta_time: f32 = (time - self.time_prev).as_secs_f32();
         // println!("delta_time: {} | sample: {} | ", delta_time, self.sample);
 
-        if self.sample <= self.decimation_factor {
+        if self.sample < self.decimation_factor {
             self.time_prev = time;
             let alpha_prev: Vector3<f32> = self.alpha;
             let nu_prev: Vector3<f32> = self.nu;
