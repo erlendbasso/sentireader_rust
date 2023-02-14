@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 serialport = "4.2.0"
 crc = "3.0.0"
-nalgebra = "0.31.4"
+nalgebra = "0.32"
