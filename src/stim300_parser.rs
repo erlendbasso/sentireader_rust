@@ -413,7 +413,7 @@ fn get_received_checksum(data: &Vec<u8>, data_length: usize) -> u32 {
 }
 
 fn compare_checksums(computed_checksum: u32, received_checksum: u32) -> Result<()> {
-    assert_eq!(computed_checksum, received_checksum);
+    // assert_eq!(computed_checksum, received_checksum);
     match computed_checksum == received_checksum {
         true => Ok(()),
         false => {
