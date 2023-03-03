@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn init_sentireader() {
-        let mut sentireader = SentiReader::new("/dev/ttySentiboard02".to_string(), 115200);
+        let mut sentireader = SentiReader::new("/dev/tty.usbmodem223103".to_string(), 115200);
 
         for _i in 0..100 {
             let sentiboard_msg = sentireader.read_package().unwrap();

@@ -6,6 +6,7 @@ mod tests {
     use sentireader_rust::{
         dvl_a50_parser, sentireader,
         stim300_parser::{self, IMUMessage},
+        dvl_nucleus1000_parser,
     };
     #[test]
     fn test_dvl_a50_parser() {
@@ -31,6 +32,37 @@ mod tests {
                 println!("data: {}", String::from_utf8_lossy(&sensor_data));
                 dvl_msg = sentireader_rust::dvl_a50_parser::parse_a50_data(&sensor_data);
                 println!("Vel: {:?}", dvl_msg.velocity);
+            }
+        }
+    }
+
+    #[test]
+    fn test_dvl_nucleus_parser() {
+        let mut sentireader =
+            sentireader::SentiReader::new("/dev/ttySentiboard02".to_string(), 115200);
+
+        const SENTIBOARD_MSG_ID_NUCLEUS: usize = 1; // UART1 port id: 4
+
+        for _i in 0..10000 {
+            let sentiboard_msg = sentireader.read_package().unwrap();
+            println!("{}, msg: {:?}", _i, sentiboard_msg.onboard_timestamp);
+            println!(
+                "sensor ID {:?}, tov {:?}, toa: {:?}",
+                sentiboard_msg.sensor_id,
+                sentiboard_msg.time_of_validity,
+                sentiboard_msg.time_of_arrival
+            );
+
+            let sensor_data = sentiboard_msg.sensor_data.unwrap();
+
+            let dvl_msg: dvl_nucleus1000_parser::ExtendedDVLMessage;
+            let altimeter_msg: dvl_nucleus1000_parser::AltimeterMessage;
+            let data_id: dvl_nucleus1000_parser::DataID;
+
+            if sentiboard_msg.sensor_id.unwrap() == SENTIBOARD_MSG_ID_NUCLEUS as u8 {
+                // println!("data: {}", String::from_utf8_lossy(&sensor_data));
+                (data_id, dvl_msg, altimeter_msg) = dvl_nucleus1000_parser::parse_nucleus_data(&sensor_data);
+                // println!("Vel: {:?}", dvl_msg.velocity);
             }
         }
     }
