@@ -9,3 +9,4 @@ edition = "2021"
 serialport = "4.2.0"
 crc = "3.0.0"
 nalgebra = "0.32"
+coning_and_sculling = {path = "coning_and_sculling" }

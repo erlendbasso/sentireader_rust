@@ -1,0 +1,3 @@
+[submodule "coning_and_sculling"]
+	path = coning_and_sculling
+	url = git@turlab.itk.ntnu.no:turlab/coning_and_sculling.git
