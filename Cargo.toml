@@ -8,5 +8,9 @@ edition = "2021"
 [dependencies]
 serialport = "4.2.0"
 crc = "3.0.0"
-nalgebra = "0.32"
+nalgebra = {version ="0.32", features = ["serde-serialize"]}
+tokio = { version = "1", features = ["full"] }
+serde = {version = "1", features = ["derive"]}
+rmp-serde = "1.1.1"
+serde_yaml = "0.9"
 coning_and_sculling = {path = "coning_and_sculling" }

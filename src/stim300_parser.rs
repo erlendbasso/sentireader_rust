@@ -71,12 +71,12 @@ const CHECKSUM_ALGORITHM: Crc<u32> = Crc::<u32>::new(&CRC_32_MPEG_2);
 // such that we subtract 10 bytes per measurement missing (for inclination and temperature position indices)
 const MIN_DATA_LENGTH: usize = 18;
 const G_RANGE: &str = "10g";
-const GYRO_OUTPUT_TYPE: GyroOutput = GyroOutput::AngularRate;
+const GYRO_OUTPUT_TYPE: GyroOutput = GyroOutput::IncrementalAngle;
 const GYRO_OUTPUT_START_POS: usize = 1;
 const GYRO_STATUS_POS: usize = 10;
 const GYRO_TEMP_OUTPUT_START_POS: usize = 31;
 const GYRO_TEMP_STATUS_POS: usize = 37;
-const ACCMETER_OUTPUT_TYPE: AccMeterOutput = AccMeterOutput::Acceleration;
+const ACCMETER_OUTPUT_TYPE: AccMeterOutput = AccMeterOutput::IncrementalVelocity;
 const ACCMETER_OUTPUT_START_POS: usize = 11;
 const ACCMETER_STATUS_POS: usize = 20;
 const ACCMETER_TEMP_OUTPUT_START_POS: usize = 38;
@@ -96,8 +96,10 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
 
     let computed_checksum = compute_checksum(data, data_length, num_crc_dummy_bytes);
     let received_checksum = get_received_checksum(data, data_length);
-    compare_checksums(computed_checksum, received_checksum)?;
+    let check_result = compare_checksums(computed_checksum, received_checksum);
 
+    match check_result {
+        Ok(res) => 
     match imu_mode {
         IMUMode::R => Ok(IMUMessage {
             mode: imu_mode,
@@ -235,7 +237,9 @@ pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
             sample_count: Some(data[data_length - 7]),
             latency: compute_latency(&data[data_length - 6..data_length - 4]),
         }),
-    }
+    },
+ Err(e) => Err(e),
+}
 }
 
 fn get_data_information(data_identifier: u8) -> Result<(IMUMode, usize, usize)> {
