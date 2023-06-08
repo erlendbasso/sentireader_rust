@@ -1,0 +1,4 @@
+# UDP settings
+remote_ip: 192.168.2.192
+remote_port: 6005
+port: 6004

@@ -71,12 +71,12 @@ const CHECKSUM_ALGORITHM: Crc<u32> = Crc::<u32>::new(&CRC_32_MPEG_2);
 // such that we subtract 10 bytes per measurement missing (for inclination and temperature position indices)
 const MIN_DATA_LENGTH: usize = 18;
 const G_RANGE: &str = "10g";
-const GYRO_OUTPUT_TYPE: GyroOutput = GyroOutput::IncrementalAngle;
+const GYRO_OUTPUT_TYPE: GyroOutput = GyroOutput::AngularRate;
 const GYRO_OUTPUT_START_POS: usize = 1;
 const GYRO_STATUS_POS: usize = 10;
 const GYRO_TEMP_OUTPUT_START_POS: usize = 31;
 const GYRO_TEMP_STATUS_POS: usize = 37;
-const ACCMETER_OUTPUT_TYPE: AccMeterOutput = AccMeterOutput::IncrementalVelocity;
+const ACCMETER_OUTPUT_TYPE: AccMeterOutput = AccMeterOutput::Acceleration;
 const ACCMETER_OUTPUT_START_POS: usize = 11;
 const ACCMETER_STATUS_POS: usize = 20;
 const ACCMETER_TEMP_OUTPUT_START_POS: usize = 38;
