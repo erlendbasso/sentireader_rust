@@ -61,7 +61,9 @@ mod tests {
 
             if sentiboard_msg.sensor_id.unwrap() == SENTIBOARD_MSG_ID_NUCLEUS as u8 {
                 // println!("data: {}", String::from_utf8_lossy(&sensor_data));
-                (data_id, dvl_msg, altimeter_msg) = dvl_nucleus1000_parser::parse_nucleus_data(&sensor_data);
+                // (data_id, dvl_msg, altimeter_msg) = dvl_nucleus1000_parser::parse_nucleus_data(&sensor_data);
+                let data_id = dvl_nucleus1000_parser::get_data_id(&sensor_data);
+                
                 // println!("Vel: {:?}", dvl_msg.velocity);
             }
         }
