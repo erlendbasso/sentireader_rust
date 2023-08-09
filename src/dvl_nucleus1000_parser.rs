@@ -1,4 +1,4 @@
-use nalgebra::Vector3;
+use nalgebra::{Vector3, UnitQuaternion, Quaternion};
 
 use crate::utils::get_f32_from_byte_array;
 
@@ -63,6 +63,7 @@ pub struct AHRSMessage {
     pub pitch: f32,
     pub heading: f32,
     pub depth: f32,
+    pub orientation: UnitQuaternion<f32>,
 }
 
 impl Default for AltimeterMessage {
@@ -298,10 +299,19 @@ pub fn parse_ahrs_data(data: &Vec<u8>) -> AHRSMessage {
     let data = remove_header_data(&data);
     let offset = data[1] as usize;
 
+    let orientation = UnitQuaternion::new_normalize(Quaternion::new(
+        get_f32_from_byte_array(&data, offset + 12),
+        get_f32_from_byte_array(&data, offset + 16),
+        get_f32_from_byte_array(&data, offset + 20),
+        get_f32_from_byte_array(&data, offset + 24),
+    )
+    );
+
     AHRSMessage {
         roll: get_f32_from_byte_array(&data, offset),
         pitch: get_f32_from_byte_array(&data, offset + 4),
         heading: get_f32_from_byte_array(&data, offset + 8),
         depth: get_f32_from_byte_array(&data, offset + 68),
+        orientation,
     }
 }
