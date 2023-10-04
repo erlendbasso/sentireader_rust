@@ -14,3 +14,4 @@ serde = {version = "1", features = ["derive"]}
 rmp-serde = "1.1.1"
 serde_yaml = "0.9"
 coning_and_sculling = {path = "coning_and_sculling" }
+anyhow = "1"

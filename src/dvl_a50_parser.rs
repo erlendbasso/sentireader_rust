@@ -27,7 +27,7 @@ pub fn parse_a50_data(data: &Vec<u8>) -> DVLMessage {
     let covariance_string_vec: Vec<&str> = string_data_vec[7].split(';').collect();
     let status_string_vec: Vec<&str> = string_data_vec[11].split('*').collect();
 
-    let crc = &data[59..63];
+    let _crc = &data[59..63];
 
     DVLMessage {
         velocity: [

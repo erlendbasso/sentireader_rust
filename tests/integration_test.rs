@@ -4,9 +4,9 @@ mod tests {
     type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
     use sentireader_rust::{
-        dvl_a50_parser, sentireader,
+        dvl_a50_parser, dvl_nucleus1000_parser, sentireader,
         stim300_parser::{self, IMUMessage},
-        dvl_nucleus1000_parser,
+        ublox_f9p_parser,
     };
     #[test]
     fn test_dvl_a50_parser() {
@@ -63,7 +63,7 @@ mod tests {
                 // println!("data: {}", String::from_utf8_lossy(&sensor_data));
                 // (data_id, dvl_msg, altimeter_msg) = dvl_nucleus1000_parser::parse_nucleus_data(&sensor_data);
                 let data_id = dvl_nucleus1000_parser::get_data_id(&sensor_data);
-                
+
                 // println!("Vel: {:?}", dvl_msg.velocity);
             }
         }
@@ -129,5 +129,59 @@ mod tests {
 
         println!("avg_acc: {:?}, avg_ar: {:?}", avg_acc, avg_ar);
         Ok(())
+    }
+
+    #[test]
+    fn test_ublox_parser() {
+        let mut sentireader =
+            sentireader::SentiReader::new("/dev/tty.usbmodem323103".to_string(), 115200);
+
+        const SENTIBOARD_MSG_ID_UBLOX_BASE: usize = 4; // UART1 port id: 4
+        const SENTIBOARD_MSG_ID_UBLOX_ROVER: usize = 0; // UART1 port id: 4
+        println!("test_ublox_parser");
+
+        for _i in 0..10000 {
+            let sentiboard_msg = sentireader.read_package().unwrap();
+            // println!("{}, msg: {:?}", _i, sentiboard_msg.onboard_timestamp);
+            // println!(
+            //     "sensor ID {:?}, tov {:?}, toa: {:?}",
+            //     sentiboard_msg.sensor_id,
+            //     sentiboard_msg.time_of_validity,
+            //     sentiboard_msg.time_of_arrival
+            // );
+
+            let sensor_data = sentiboard_msg.sensor_data.unwrap();
+
+            // let dvl_msg: dvl_nucleus1000_parser::ExtendedDVLMessage;
+            // let altimeter_msg: dvl_nucleus1000_parser::AltimeterMessage;
+            // let data_id: ublox_f9p_parser::DataID;
+
+            if sentiboard_msg.sensor_id.unwrap() == SENTIBOARD_MSG_ID_UBLOX_BASE as u8
+                || sentiboard_msg.sensor_id.unwrap() == SENTIBOARD_MSG_ID_UBLOX_ROVER as u8
+            {
+                // println!("data: {}", String::from_utf8_lossy(&sensor_data));
+                // (data_id, dvl_msg, altimeter_msg) = dvl_nucleus1000_parser::parse_nucleus_data(&sensor_data);
+                let data_id = ublox_f9p_parser::get_data_id(&sensor_data);
+
+                match data_id {
+                    ublox_f9p_parser::DataID::NavPvt => {
+                        let nav_pvt_msg = ublox_f9p_parser::decode_ubx_nav_pvt_msg(&sensor_data);
+                        println!("nav_pvt_msg: {:?}", nav_pvt_msg);
+                        println!("HEADING: {}", nav_pvt_msg.head_veh);
+                        println!("HEADING VALID: {}", nav_pvt_msg.head_veh_valid);
+                        println!("HEIGHT: {}", nav_pvt_msg.height);
+                        println!("HEIGHT msl: {}", nav_pvt_msg.h_msl);
+                    }
+                    ublox_f9p_parser::DataID::NavRelPosNed => {
+                        let nav_rel_pos_ned_msg =
+                            ublox_f9p_parser::decode_ubx_nav_relposned(&sensor_data);
+                        println!("nav_rel_pos_ned_msg: {:?}", nav_rel_pos_ned_msg);
+                    }
+                    _ => {}
+                }
+
+                // println!("Vel: {:?}", dvl_msg.velocity);
+            }
+        }
     }
 }
