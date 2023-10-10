@@ -58,11 +58,11 @@ pub struct UBXNavRelPosNed {
     pub version: u8,
     pub ref_station_id: u16,
     pub itow: u32,
-    pub rel_pos_n: i32,        // unit [cm]
-    pub rel_pos_e: i32,        // unit [cm]
-    pub rel_pos_d: i32,        // unit [cm]
-    pub rel_pos_length: u32,   // unit [cm]
-    pub rel_pos_heading: i32,  // unit [deg]
+    pub rel_pos_n: f32,        // unit [m]
+    pub rel_pos_e: f32,        // unit [m]
+    pub rel_pos_d: f32,        // unit [m]
+    pub rel_pos_length: f32,   // unit [m]
+    pub rel_pos_heading: f32,  // unit [deg]
     pub rel_pos_hpn: i8,       // unit [mm]
     pub rel_pos_hpe: i8,       // unit [mm]
     pub rel_pos_hpd: i8,       // unit [mm]
@@ -71,7 +71,7 @@ pub struct UBXNavRelPosNed {
     pub acc_e: u32,            // unit [mm]
     pub acc_d: u32,            // unit [mm]
     pub acc_length: u32,       // unit [mm]
-    pub acc_heading: u32,      // unit [deg]
+    pub acc_heading: f32,      // unit [deg]
     pub gnss_fix_ok: bool,
     pub diff_soln: bool,
     pub rel_pos_valid: bool,
@@ -233,11 +233,11 @@ pub fn decode_ubx_nav_relposned(data: &Vec<u8>) -> UBXNavRelPosNed {
     let version = payload[0];
     let ref_station_id = get_u16_from_le_byte_array(&payload, 2);
     let itow = get_u32_from_le_byte_array(&payload, 4);
-    let rel_pos_n = get_i32_from_le_byte_array(&payload, 8); // unit [cm]
-    let rel_pos_e = get_i32_from_le_byte_array(&payload, 12); // unit [cm]
-    let rel_pos_d = get_i32_from_le_byte_array(&payload, 16); // unit [cm]
-    let rel_pos_length = get_u32_from_le_byte_array(&payload, 20); // unit [cm]
-    let rel_pos_heading = get_i32_from_le_byte_array(&payload, 24); // unit [deg]
+    let rel_pos_n = get_i32_from_le_byte_array(&payload, 8) as f32 * 1e-2; // unit [cm]
+    let rel_pos_e = get_i32_from_le_byte_array(&payload, 12) as f32 * 1e-2; // unit [cm]
+    let rel_pos_d = get_i32_from_le_byte_array(&payload, 16) as f32 * 1e-2; // unit [cm]
+    let rel_pos_length = get_u32_from_le_byte_array(&payload, 20) as f32 * 1e-2; // unit [cm]
+    let rel_pos_heading = (get_i32_from_le_byte_array(&payload, 24) as f32) * 1e-5; // unit [deg]
     let rel_pos_hpn = payload[32] as i8; // unit [mm]
     let rel_pos_hpe = payload[33] as i8; // unit [mm]
     let rel_pos_hpd = payload[34] as i8; // unit [mm]
@@ -246,7 +246,7 @@ pub fn decode_ubx_nav_relposned(data: &Vec<u8>) -> UBXNavRelPosNed {
     let acc_e = get_u32_from_le_byte_array(&payload, 40); // unit [mm]
     let acc_d = get_u32_from_le_byte_array(&payload, 44); // unit [mm]
     let acc_length = get_u32_from_le_byte_array(&payload, 48); // unit [mm]
-    let acc_heading = get_u32_from_le_byte_array(&payload, 52); // unit [deg]
+    let acc_heading = get_u32_from_le_byte_array(&payload, 52) as f32 * 1e-5; // unit [deg]
     let flags = &payload[60..60 + 4];
     let gnss_fix_ok = (flags[0] >> 0) & 1;
     let diff_soln = (flags[0] >> 1) & 1;

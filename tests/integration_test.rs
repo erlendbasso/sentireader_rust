@@ -136,11 +136,13 @@ mod tests {
         let mut sentireader =
             sentireader::SentiReader::new("/dev/tty.usbmodem323103".to_string(), 115200);
 
+        // sentireader.has_onboard_timestamp = true;
+
         const SENTIBOARD_MSG_ID_UBLOX_BASE: usize = 4; // UART1 port id: 4
         const SENTIBOARD_MSG_ID_UBLOX_ROVER: usize = 0; // UART1 port id: 4
         println!("test_ublox_parser");
 
-        for _i in 0..10000 {
+        for _i in 0..100000 {
             let sentiboard_msg = sentireader.read_package().unwrap();
             // println!("{}, msg: {:?}", _i, sentiboard_msg.onboard_timestamp);
             // println!(
