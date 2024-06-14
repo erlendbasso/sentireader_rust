@@ -2,3 +2,9 @@
 remote_ip: 192.168.2.192
 remote_port: 6005
 port: 6004
+# Serial settings
+# serial_port: /dev/ttySentiboard02
+serial_port: /dev/tty.usbmodem212203
+imu_roll_offset: 93.0
+imu_pitch_offset: 0.0
+imu_yaw_offset: 90.0

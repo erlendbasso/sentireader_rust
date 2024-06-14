@@ -13,5 +13,16 @@ tokio = { version = "1", features = ["full"] }
 serde = {version = "1", features = ["derive"]}
 rmp-serde = "1.1.1"
 serde_yaml = "0.9"
-coning_and_sculling = {path = "coning_and_sculling" }
+coning_and_sculling = {path = "coning_and_sculling", optional = true }
 anyhow = "1"
+
+
+[features]
+coning_and_sculling = ["dep:coning_and_sculling"]
+
+[[bin]]
+name = "senti_reader_cs"
+required-features = ["coning_and_sculling"]
+
+[[bin]]
+name = "senti_reader"
