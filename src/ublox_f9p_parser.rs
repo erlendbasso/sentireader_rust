@@ -83,25 +83,84 @@ pub struct UBXNavRelPosNed {
     pub rel_pos_normalized: bool,
 }
 
-pub enum DataID {
+#[derive(Debug)]
+pub struct UBXNavHPPosECEF {
+    pub version: u8,
+    pub itow: u32,
+    pub ecef_x: i32,
+    pub ecef_y: i32,
+    pub ecef_z: i32,
+    pub ecef_x_hp: i8,
+    pub ecef_y_hp: i8,
+    pub ecef_z_hp: i8,
+    pub invalid_ecef: u8,
+    pub p_acc: u32,
+}
+
+#[derive(Debug)]
+pub struct UBXNavHPPosLLH {
+    pub version: u8,
+    pub invalid_llh: u8,
+    pub itow: u32,
+    pub lon: i32,
+    pub lat: i32,
+    pub height: i32,
+    pub h_msl: i32,
+    pub lon_hp: i8,
+    pub lat_hp: i8,
+    pub height_hp: i8,
+    pub h_msl_hp: i8,
+    pub h_acc: u32,
+    pub v_acc: u32,
+}
+
+pub enum MessageType {
     NavPvt,
     NavRelPosNed,
+    NavHPPosECEF,
+    NavHPPosLLH,
     Unknown,
 }
 
-fn get_data_information(data_id: u8) -> DataID {
-    match data_id {
-        7 => DataID::NavPvt,
-        60 => DataID::NavRelPosNed,
-        // _ => panic!("Unknown data id: {}", data_id),
-        _ => DataID::Unknown,
+pub enum UBXMessageClass {
+    Nav,
+    Receiver,
+    Unknown,
+}
+
+fn get_msg_class(msg_class: u8) -> UBXMessageClass {
+    match msg_class {
+        1 => UBXMessageClass::Nav,
+        2 => UBXMessageClass::Receiver,
+        _ => UBXMessageClass::Unknown,
     }
 }
 
-pub fn get_data_id(data: &Vec<u8>) -> DataID {
-    let data_id = data[3];
-    // println!("data_id: {}", data_id);
-    get_data_information(data_id)
+fn get_data_information(data_id: u8) -> MessageType {
+    match data_id {
+        7 => MessageType::NavPvt,
+        19 => MessageType::NavHPPosECEF,
+        20 => MessageType::NavHPPosLLH,
+        60 => MessageType::NavRelPosNed,
+        // _ => panic!("Unknown data id: {}", data_id),
+        _ => MessageType::Unknown,
+    }
+}
+
+pub fn get_ubx_message_class(data: &Vec<u8>) -> UBXMessageClass {
+    let msg_class = data[2];
+    get_msg_class(msg_class)
+}
+
+pub fn get_message_type(data: &Vec<u8>) -> MessageType {
+    let msg_class = get_msg_class(data[2]);
+    match msg_class {
+        UBXMessageClass::Nav => {
+            // println!("data_id: {}", data_id);
+            get_data_information(data[3])
+        }
+        _ => MessageType::Unknown,
+    }
 }
 
 fn compare_checksums(data: &Vec<u8>) -> Result<()> {
@@ -117,6 +176,82 @@ fn compare_checksums(data: &Vec<u8>) -> Result<()> {
         return Err(anyhow::anyhow!("ublox checksum error"));
     }
     Ok(())
+}
+
+pub fn decode_ubx_nav_hpposecef_msg(data: &Vec<u8>) -> Option<UBXNavHPPosECEF> {
+    compare_checksums(&data).expect("ublox checksum error");
+
+    let payload_length = get_u16_from_le_byte_array(&data, 4) as usize;
+    // println!("Payload length: {}", payload_length);
+    // if payload_length != 28 {
+    //     println!("invalid payload length");
+    //     return None; // Not enough data
+    // }
+
+    let payload = &data[6..6 + payload_length].to_vec();
+
+    let version = payload[0];
+    let itow = get_u32_from_le_byte_array(&payload, 4);
+    let ecef_x = get_i32_from_le_byte_array(&payload, 8);
+    let ecef_y = get_i32_from_le_byte_array(&payload, 12);
+    let ecef_z = get_i32_from_le_byte_array(&payload, 16);
+    let ecef_x_hp = payload[20] as i8;
+    let ecef_y_hp = payload[21] as i8;
+    let ecef_z_hp = payload[22] as i8;
+
+    let invalid_ecef = payload[23];
+    let p_acc = get_u32_from_le_byte_array(&payload, 24);
+
+    Some(UBXNavHPPosECEF {
+        version,
+        itow,
+        ecef_x,
+        ecef_y,
+        ecef_z,
+        ecef_x_hp,
+        ecef_y_hp,
+        ecef_z_hp,
+        invalid_ecef,
+        p_acc,
+    })
+}
+
+pub fn decode_ubx_nav_hpposllh_msg(data: &Vec<u8>) -> UBXNavHPPosLLH {
+    compare_checksums(&data).expect("ublox checksum error");
+
+    let payload_length = get_u16_from_le_byte_array(&data, 4) as usize;
+
+    let payload = &data[6..6 + payload_length].to_vec();
+
+    let version = payload[0];
+    let invalid_llh = payload[1];
+    let itow = get_u32_from_le_byte_array(&payload, 4);
+    let lon = get_i32_from_le_byte_array(&payload, 8);
+    let lat = get_i32_from_le_byte_array(&payload, 12);
+    let height = get_i32_from_le_byte_array(&payload, 16);
+    let h_msl = get_i32_from_le_byte_array(&payload, 20);
+    let lon_hp = payload[24] as i8;
+    let lat_hp = payload[25] as i8;
+    let height_hp = payload[26] as i8;
+    let h_msl_hp = payload[27] as i8;
+    let h_acc = get_u32_from_le_byte_array(&payload, 28);
+    let v_acc = get_u32_from_le_byte_array(&payload, 32);
+
+    UBXNavHPPosLLH {
+        version,
+        invalid_llh,
+        itow,
+        lon,
+        lat,
+        height,
+        h_msl,
+        lon_hp,
+        lat_hp,
+        height_hp,
+        h_msl_hp,
+        h_acc,
+        v_acc,
+    }
 }
 
 pub fn decode_ubx_nav_pvt_msg(data: &Vec<u8>) -> UBXNavPvt {
