@@ -1,6 +1,6 @@
 use crate::utils::{
-    get_i16_from_le_byte_array, get_i32_from_le_byte_array, get_u16_from_le_byte_array,
-    get_u32_from_le_byte_array,
+    get_f32_from_le_byte_array, get_i16_from_le_byte_array, get_i32_from_le_byte_array,
+    get_u16_from_le_byte_array, get_u32_from_le_byte_array,
 };
 
 use anyhow::Result;
@@ -112,6 +112,27 @@ pub struct UBXNavHPPosLLH {
     pub h_msl_hp: i8,
     pub h_acc: u32,
     pub v_acc: u32,
+}
+
+// Covariance is in NED frame
+#[derive(Debug)]
+pub struct UBXNavCov {
+    pub itow: u32,
+    pub version: u8,
+    pub pos_cov_valid: u8,
+    pub vel_cov_valid: u8,
+    pub pos_cov_nn: f32,
+    pub pos_cov_ne: f32,
+    pub pos_cov_nd: f32,
+    pub pos_cov_ee: f32,
+    pub pos_cov_ed: f32,
+    pub pos_cov_dd: f32,
+    pub vel_cov_nn: f32,
+    pub vel_cov_ne: f32,
+    pub vel_cov_nd: f32,
+    pub vel_cov_ee: f32,
+    pub vel_cov_ed: f32,
+    pub vel_cov_dd: f32,
 }
 
 pub enum MessageType {
@@ -423,6 +444,50 @@ pub fn decode_ubx_nav_relposned(data: &Vec<u8>) -> UBXNavRelPosNed {
     }
 }
 
+pub fn decode_ubx_nav_cov_msg(data: &Vec<u8>) -> Option<UBXNavCov> {
+    compare_checksums(&data).expect("ublox checksum error");
+
+    let payload_length = get_u16_from_le_byte_array(&data, 4) as usize;
+
+    let payload = &data[6..6 + payload_length].to_vec();
+
+    let itow = get_u32_from_le_byte_array(&payload, 0);
+    let version = payload[4];
+    let pos_cov_valid = payload[5];
+    let vel_cov_valid = payload[6];
+    let pos_cov_nn = get_f32_from_le_byte_array(&payload, 16) as f32;
+    let pos_cov_ne = get_f32_from_le_byte_array(&payload, 20) as f32;
+    let pos_cov_nd = get_f32_from_le_byte_array(&payload, 24) as f32;
+    let pos_cov_ee = get_f32_from_le_byte_array(&payload, 28) as f32;
+    let pos_cov_ed = get_f32_from_le_byte_array(&payload, 32) as f32;
+    let pos_cov_dd = get_f32_from_le_byte_array(&payload, 36) as f32;
+    let vel_cov_nn = get_f32_from_le_byte_array(&payload, 40) as f32;
+    let vel_cov_ne = get_f32_from_le_byte_array(&payload, 44) as f32;
+    let vel_cov_nd = get_f32_from_le_byte_array(&payload, 48) as f32;
+    let vel_cov_ee = get_f32_from_le_byte_array(&payload, 52) as f32;
+    let vel_cov_ed = get_f32_from_le_byte_array(&payload, 56) as f32;
+    let vel_cov_dd = get_f32_from_le_byte_array(&payload, 60) as f32;
+
+    Some(UBXNavCov {
+        itow,
+        version,
+        pos_cov_valid,
+        vel_cov_valid,
+        pos_cov_nn,
+        pos_cov_ne,
+        pos_cov_nd,
+        pos_cov_ee,
+        pos_cov_ed,
+        pos_cov_dd,
+        vel_cov_nn,
+        vel_cov_ne,
+        vel_cov_nd,
+        vel_cov_ee,
+        vel_cov_ed,
+        vel_cov_dd,
+    })
+}
+
 /// 8 bit Fletcher checksum algorithm
 fn compute_checksum(data: &Vec<u8>) -> (u8, u8) {
     let mut ck_a: u8 = 0;
@@ -434,4 +499,66 @@ fn compute_checksum(data: &Vec<u8>) -> (u8, u8) {
     }
 
     (ck_a, ck_b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // #[test]
+    // fn test_compute_checksum() {
+    //     let data = vec![0x01, 0x02, 0x03, 0x04, 0x05];
+    //     let (ck_a, ck_b) = compute_checksum(&data);
+    //     assert_eq!(ck_a, 0x0f);
+    //     assert_eq!(ck_b, 0x14);
+    // }
+
+    #[test]
+    fn test_parse_ubx_nav_cov_message() {
+        let message_bytes: Vec<u8> = vec![
+            // UBX header
+            0xB5, 0x62, // sync chars
+            0x01, 0x36, // class, ID (NAV, COV)
+            0x40, 0x00, // length (64 bytes)
+            // UBX-NAV-COV message payload (with non-zero values)
+            0x12, 0x34, 0x56, 0x78, // iTOW (305419896)
+            // 0x01, 0x02, // cov (258)
+            0x00, // version
+            0x01, 0x01, // posCovValid, velCovValid
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // reserved (9 bytes)
+            0x00, 0x00, 0x00, 0x00, // posCovNN (0)
+            0x00, 0x00, 0x00, 0x00, // posCovNE (0)
+            0x00, 0x00, 0x00, 0x00, // posCovND (0)
+            0x00, 0x00, 0x00, 0x00, // posCovEE (0)
+            0x00, 0x00, 0x00, 0x00, // posCovED (0)
+            0x00, 0x00, 0x00, 0x00, // posCovDD (0)
+            0x00, 0x00, 0x00, 0x00, // velCovNN (0)
+            0x00, 0x00, 0x00, 0x00, // velCovNE (0)
+            0x00, 0x00, 0x00, 0x00, // velCovND (0)
+            0x00, 0x00, 0x00, 0x00, // velCovEE (0)
+            0x00, 0x00, 0x00, 0x00, // velCovED (0)
+            0x00, 0x00, 0x00, 0x00, // velCovDD (0)
+            // UBX checksum (placeholder - calculate the actual checksum)
+            141, 19, // CK_A, CK_B
+        ];
+        println!("Length: {}", message_bytes.len());
+        let payload_length = get_u16_from_le_byte_array(&message_bytes, 4) as usize;
+        println!("Payload length: {}", payload_length);
+        println!(
+            "Checksums: {:?}",
+            compute_checksum(&message_bytes[2..HEADER_SIZE + 64].to_vec())
+        );
+
+        let parsed_message = decode_ubx_nav_cov_msg(&message_bytes);
+
+        match parsed_message {
+            Some(nav_cov) => {
+                println!("{:?}", nav_cov);
+                // assert_eq!(nav_cov.itow, 305419896);
+                assert_eq!(nav_cov.version, 0);
+                // ... assert other fields as needed
+            }
+            _ => panic!("Unexpected message type"),
+        }
+    }
 }

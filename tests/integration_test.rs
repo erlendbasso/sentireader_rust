@@ -163,9 +163,9 @@ mod tests {
             {
                 // println!("data: {}", String::from_utf8_lossy(&sensor_data));
                 // (data_id, dvl_msg, altimeter_msg) = dvl_nucleus1000_parser::parse_nucleus_data(&sensor_data);
-                let data_id = ublox_f9p_parser::get_data_id(&sensor_data);
+                let msg_type = ublox_f9p_parser::get_message_type(&sensor_data);
 
-                match data_id {
+                match msg_type {
                     ublox_f9p_parser::MessageType::NavPvt => {
                         let nav_pvt_msg = ublox_f9p_parser::decode_ubx_nav_pvt_msg(&sensor_data);
                         println!("nav_pvt_msg: {:?}", nav_pvt_msg);

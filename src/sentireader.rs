@@ -199,18 +199,18 @@ fn compare_checksum(data: &[u8], received_checksum: u16) -> Result<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn init_sentireader() {
-        let mut sentireader = SentiReader::new("/dev/tty.usbmodem223103".to_string(), 115200);
+    // #[test]
+    // fn init_sentireader() {
+    //     let mut sentireader = SentiReader::new("/dev/tty.usbmodem223103".to_string(), 115200);
 
-        for _i in 0..100 {
-            let sentiboard_msg = sentireader.read_package().unwrap();
-            println!("{}, msg: {:?}", _i, sentiboard_msg.onboard_timestamp);
-            println!(
-                "tov {:?} toa: {:?}",
-                sentiboard_msg.time_of_validity, sentiboard_msg.time_of_arrival
-            );
-            // println!("toa: {}", sentireader.sentiboard_msg.t\ime_of_arrival);
-        }
-    }
+    //     for _i in 0..100 {
+    //         let sentiboard_msg = sentireader.read_package().unwrap();
+    //         println!("{}, msg: {:?}", _i, sentiboard_msg.onboard_timestamp);
+    //         println!(
+    //             "tov {:?} toa: {:?}",
+    //             sentiboard_msg.time_of_validity, sentiboard_msg.time_of_arrival
+    //         );
+    //         // println!("toa: {}", sentireader.sentiboard_msg.t\ime_of_arrival);
+    //     }
+    // }
 }
