@@ -12,8 +12,8 @@ pub struct DVLMessage {
     pub status: i32,
 }
 
-pub fn parse_a50_data(data: &Vec<u8>) -> DVLMessage {
-    let string_data = String::from_utf8_lossy(&data);
+pub fn parse_a50_data(data: &[u8]) -> DVLMessage {
+    let string_data = String::from_utf8_lossy(data);
 
     // let regex = Regex::new(r"(wrz.*)").unwrap();
     // let captures = regex.captures(&string_data).unwrap();

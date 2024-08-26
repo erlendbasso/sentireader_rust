@@ -139,6 +139,7 @@ pub enum MessageType {
     NavPvt,
     NavRelPosNed,
     NavHPPosECEF,
+    NavCov,
     NavHPPosLLH,
     Unknown,
 }
@@ -162,18 +163,19 @@ fn get_data_information(data_id: u8) -> MessageType {
         7 => MessageType::NavPvt,
         19 => MessageType::NavHPPosECEF,
         20 => MessageType::NavHPPosLLH,
+        54 => MessageType::NavCov,
         60 => MessageType::NavRelPosNed,
         // _ => panic!("Unknown data id: {}", data_id),
         _ => MessageType::Unknown,
     }
 }
 
-pub fn get_ubx_message_class(data: &Vec<u8>) -> UBXMessageClass {
+pub fn get_ubx_message_class(data: &[u8]) -> UBXMessageClass {
     let msg_class = data[2];
     get_msg_class(msg_class)
 }
 
-pub fn get_message_type(data: &Vec<u8>) -> MessageType {
+pub fn get_message_type(data: &[u8]) -> MessageType {
     let msg_class = get_msg_class(data[2]);
     match msg_class {
         UBXMessageClass::Nav => {
@@ -184,11 +186,11 @@ pub fn get_message_type(data: &Vec<u8>) -> MessageType {
     }
 }
 
-fn compare_checksums(data: &Vec<u8>) -> Result<()> {
+fn compare_checksums(data: &[u8]) -> Result<()> {
     let check_a = data[data.len() - 2];
     let check_b = data[data.len() - 1];
 
-    let payload_length = get_u16_from_le_byte_array(&data, 4) as usize;
+    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
 
     let (ck_a, ck_b) = compute_checksum(&data[2..HEADER_SIZE + payload_length].to_vec());
 
@@ -199,10 +201,10 @@ fn compare_checksums(data: &Vec<u8>) -> Result<()> {
     Ok(())
 }
 
-pub fn decode_ubx_nav_hpposecef_msg(data: &Vec<u8>) -> Option<UBXNavHPPosECEF> {
-    compare_checksums(&data).expect("ublox checksum error");
+pub fn decode_ubx_nav_hpposecef_msg(data: &[u8]) -> Option<UBXNavHPPosECEF> {
+    compare_checksums(data).expect("ublox checksum error");
 
-    let payload_length = get_u16_from_le_byte_array(&data, 4) as usize;
+    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
     // println!("Payload length: {}", payload_length);
     // if payload_length != 28 {
     //     println!("invalid payload length");
@@ -212,16 +214,16 @@ pub fn decode_ubx_nav_hpposecef_msg(data: &Vec<u8>) -> Option<UBXNavHPPosECEF> {
     let payload = &data[6..6 + payload_length].to_vec();
 
     let version = payload[0];
-    let itow = get_u32_from_le_byte_array(&payload, 4);
-    let ecef_x = get_i32_from_le_byte_array(&payload, 8);
-    let ecef_y = get_i32_from_le_byte_array(&payload, 12);
-    let ecef_z = get_i32_from_le_byte_array(&payload, 16);
+    let itow = get_u32_from_le_byte_array(payload, 4);
+    let ecef_x = get_i32_from_le_byte_array(payload, 8);
+    let ecef_y = get_i32_from_le_byte_array(payload, 12);
+    let ecef_z = get_i32_from_le_byte_array(payload, 16);
     let ecef_x_hp = payload[20] as i8;
     let ecef_y_hp = payload[21] as i8;
     let ecef_z_hp = payload[22] as i8;
 
     let invalid_ecef = payload[23];
-    let p_acc = get_u32_from_le_byte_array(&payload, 24);
+    let p_acc = get_u32_from_le_byte_array(payload, 24);
 
     Some(UBXNavHPPosECEF {
         version,
@@ -237,26 +239,26 @@ pub fn decode_ubx_nav_hpposecef_msg(data: &Vec<u8>) -> Option<UBXNavHPPosECEF> {
     })
 }
 
-pub fn decode_ubx_nav_hpposllh_msg(data: &Vec<u8>) -> UBXNavHPPosLLH {
-    compare_checksums(&data).expect("ublox checksum error");
+pub fn decode_ubx_nav_hpposllh_msg(data: &[u8]) -> UBXNavHPPosLLH {
+    compare_checksums(data).expect("ublox checksum error");
 
-    let payload_length = get_u16_from_le_byte_array(&data, 4) as usize;
+    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
 
     let payload = &data[6..6 + payload_length].to_vec();
 
     let version = payload[0];
     let invalid_llh = payload[1];
-    let itow = get_u32_from_le_byte_array(&payload, 4);
-    let lon = get_i32_from_le_byte_array(&payload, 8);
-    let lat = get_i32_from_le_byte_array(&payload, 12);
-    let height = get_i32_from_le_byte_array(&payload, 16);
-    let h_msl = get_i32_from_le_byte_array(&payload, 20);
+    let itow = get_u32_from_le_byte_array(payload, 4);
+    let lon = get_i32_from_le_byte_array(payload, 8);
+    let lat = get_i32_from_le_byte_array(payload, 12);
+    let height = get_i32_from_le_byte_array(payload, 16);
+    let h_msl = get_i32_from_le_byte_array(payload, 20);
     let lon_hp = payload[24] as i8;
     let lat_hp = payload[25] as i8;
     let height_hp = payload[26] as i8;
     let h_msl_hp = payload[27] as i8;
-    let h_acc = get_u32_from_le_byte_array(&payload, 28);
-    let v_acc = get_u32_from_le_byte_array(&payload, 32);
+    let h_acc = get_u32_from_le_byte_array(payload, 28);
+    let v_acc = get_u32_from_le_byte_array(payload, 32);
 
     UBXNavHPPosLLH {
         version,
@@ -275,31 +277,31 @@ pub fn decode_ubx_nav_hpposllh_msg(data: &Vec<u8>) -> UBXNavHPPosLLH {
     }
 }
 
-pub fn decode_ubx_nav_pvt_msg(data: &Vec<u8>) -> UBXNavPvt {
-    compare_checksums(&data).expect("ublox checksum error");
+pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> UBXNavPvt {
+    compare_checksums(data).expect("ublox checksum error");
 
-    let payload_length = get_u16_from_le_byte_array(&data, 4) as usize;
+    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
 
     let payload = &data[6..6 + payload_length].to_vec();
 
-    let itow = get_u32_from_le_byte_array(&payload, 0);
-    let year = get_u16_from_le_byte_array(&payload, 4);
+    let itow = get_u32_from_le_byte_array(payload, 0);
+    let year = get_u16_from_le_byte_array(payload, 4);
     let month = payload[6];
     let day = payload[7];
     let hour = payload[8];
     let min = payload[9];
     let sec = payload[10];
     let valid = payload[11];
-    let valid_date = (valid >> 0) & 1;
+    let valid_date = valid & 1;
     let valid_time = (valid >> 1) & 1;
     let fully_resolved = (valid >> 2) & 1;
     let valid_mag = (valid >> 3) & 1;
 
-    let t_acc = get_u32_from_le_byte_array(&payload, 12);
-    let nano = get_i32_from_le_byte_array(&payload, 16);
+    let t_acc = get_u32_from_le_byte_array(payload, 12);
+    let nano = get_i32_from_le_byte_array(payload, 16);
     let fix_type = payload[20];
     let flags = payload[21];
-    let gnss_fix_ok = (flags >> 0) & 1;
+    let gnss_fix_ok = flags & 1;
     let diff_soln = (flags >> 1) & 1;
     let psm_state = (flags >> 2) & 0b111;
     let head_veh_valid = (flags >> 5) & 1;
@@ -311,27 +313,27 @@ pub fn decode_ubx_nav_pvt_msg(data: &Vec<u8>) -> UBXNavPvt {
     let confirmed_time = (flags2 >> 7) & 1;
 
     let num_sv = payload[23];
-    let lon = (get_i32_from_le_byte_array(&payload, 24) as f32) * 1e-7;
-    let lat = (get_i32_from_le_byte_array(&payload, 28) as f32) * 1e-7;
-    let height = get_i32_from_le_byte_array(&payload, 32) as f32 * 1e-3;
-    let h_msl = get_i32_from_le_byte_array(&payload, 36) as f32 * 1e-3;
-    let h_acc = get_u32_from_le_byte_array(&payload, 40) as f32 * 1e-3;
-    let v_acc = get_u32_from_le_byte_array(&payload, 44) as f32 * 1e-3;
-    let vel_n = get_i32_from_le_byte_array(&payload, 48) as f32 * 1e-3;
-    let vel_e = get_i32_from_le_byte_array(&payload, 52) as f32 * 1e-3;
-    let vel_d = get_i32_from_le_byte_array(&payload, 56) as f32 * 1e-3;
-    let g_speed = get_i32_from_le_byte_array(&payload, 60);
-    let head_mot = get_i32_from_le_byte_array(&payload, 64) as f32 * 1e-5;
-    let s_acc = get_u32_from_le_byte_array(&payload, 68);
-    let head_acc = get_u32_from_le_byte_array(&payload, 72);
-    let p_dop = get_u16_from_le_byte_array(&payload, 76);
-    let flags3 = get_u16_from_le_byte_array(&payload, 78);
-    let invalid_lat_lon_height = (flags3 >> 0) & 1;
+    let lon = (get_i32_from_le_byte_array(payload, 24) as f32) * 1e-7;
+    let lat = (get_i32_from_le_byte_array(payload, 28) as f32) * 1e-7;
+    let height = get_i32_from_le_byte_array(payload, 32) as f32 * 1e-3;
+    let h_msl = get_i32_from_le_byte_array(payload, 36) as f32 * 1e-3;
+    let h_acc = get_u32_from_le_byte_array(payload, 40) as f32 * 1e-3;
+    let v_acc = get_u32_from_le_byte_array(payload, 44) as f32 * 1e-3;
+    let vel_n = get_i32_from_le_byte_array(payload, 48) as f32 * 1e-3;
+    let vel_e = get_i32_from_le_byte_array(payload, 52) as f32 * 1e-3;
+    let vel_d = get_i32_from_le_byte_array(payload, 56) as f32 * 1e-3;
+    let g_speed = get_i32_from_le_byte_array(payload, 60);
+    let head_mot = get_i32_from_le_byte_array(payload, 64) as f32 * 1e-5;
+    let s_acc = get_u32_from_le_byte_array(payload, 68);
+    let head_acc = get_u32_from_le_byte_array(payload, 72);
+    let p_dop = get_u16_from_le_byte_array(payload, 76);
+    let flags3 = get_u16_from_le_byte_array(payload, 78);
+    let invalid_lat_lon_height = flags3 & 1;
     let last_correction_age = ((flags3 >> 1) & 0b1111) as u8;
 
-    let head_veh = get_i32_from_le_byte_array(&payload, 84) as f32 * 1e-5;
-    let mag_dec = get_i16_from_le_byte_array(&payload, 88) as f32 * 1e-2;
-    let mag_acc = get_u16_from_le_byte_array(&payload, 90) as f32 * 1e-2;
+    let head_veh = get_i32_from_le_byte_array(payload, 84) as f32 * 1e-5;
+    let mag_dec = get_i16_from_le_byte_array(payload, 88) as f32 * 1e-2;
+    let mag_acc = get_u16_from_le_byte_array(payload, 90) as f32 * 1e-2;
 
     UBXNavPvt {
         itow,
@@ -379,39 +381,39 @@ pub fn decode_ubx_nav_pvt_msg(data: &Vec<u8>) -> UBXNavPvt {
     }
 }
 
-pub fn decode_ubx_nav_relposned(data: &Vec<u8>) -> UBXNavRelPosNed {
-    compare_checksums(&data).expect("ublox checksum error");
+pub fn decode_ubx_nav_relposned(data: &[u8]) -> UBXNavRelPosNed {
+    compare_checksums(data).expect("ublox checksum error");
 
-    let payload_length = get_u16_from_le_byte_array(&data, 4) as usize;
+    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
 
     let payload = &data[6..6 + payload_length].to_vec();
 
     let version = payload[0];
-    let ref_station_id = get_u16_from_le_byte_array(&payload, 2);
-    let itow = get_u32_from_le_byte_array(&payload, 4);
-    let rel_pos_n = get_i32_from_le_byte_array(&payload, 8) as f32 * 1e-2; // unit [cm]
-    let rel_pos_e = get_i32_from_le_byte_array(&payload, 12) as f32 * 1e-2; // unit [cm]
-    let rel_pos_d = get_i32_from_le_byte_array(&payload, 16) as f32 * 1e-2; // unit [cm]
-    let rel_pos_length = get_u32_from_le_byte_array(&payload, 20) as f32 * 1e-2; // unit [cm]
-    let rel_pos_heading = (get_i32_from_le_byte_array(&payload, 24) as f32) * 1e-5; // unit [deg]
+    let ref_station_id = get_u16_from_le_byte_array(payload, 2);
+    let itow = get_u32_from_le_byte_array(payload, 4);
+    let rel_pos_n = get_i32_from_le_byte_array(payload, 8) as f32 * 1e-2; // unit [cm]
+    let rel_pos_e = get_i32_from_le_byte_array(payload, 12) as f32 * 1e-2; // unit [cm]
+    let rel_pos_d = get_i32_from_le_byte_array(payload, 16) as f32 * 1e-2; // unit [cm]
+    let rel_pos_length = get_u32_from_le_byte_array(payload, 20) as f32 * 1e-2; // unit [cm]
+    let rel_pos_heading = (get_i32_from_le_byte_array(payload, 24) as f32) * 1e-5; // unit [deg]
     let rel_pos_hpn = payload[32] as i8; // unit [mm]
     let rel_pos_hpe = payload[33] as i8; // unit [mm]
     let rel_pos_hpd = payload[34] as i8; // unit [mm]
     let rel_pos_hp_length = payload[35] as i8; // unit [mm]
-    let acc_n = get_u32_from_le_byte_array(&payload, 36); // unit [mm]
-    let acc_e = get_u32_from_le_byte_array(&payload, 40); // unit [mm]
-    let acc_d = get_u32_from_le_byte_array(&payload, 44); // unit [mm]
-    let acc_length = get_u32_from_le_byte_array(&payload, 48); // unit [mm]
-    let acc_heading = get_u32_from_le_byte_array(&payload, 52) as f32 * 1e-5; // unit [deg]
+    let acc_n = get_u32_from_le_byte_array(payload, 36); // unit [mm]
+    let acc_e = get_u32_from_le_byte_array(payload, 40); // unit [mm]
+    let acc_d = get_u32_from_le_byte_array(payload, 44); // unit [mm]
+    let acc_length = get_u32_from_le_byte_array(payload, 48); // unit [mm]
+    let acc_heading = get_u32_from_le_byte_array(payload, 52) as f32 * 1e-5; // unit [deg]
     let flags = &payload[60..60 + 4];
-    let gnss_fix_ok = (flags[0] >> 0) & 1;
+    let gnss_fix_ok = flags[0] & 1;
     let diff_soln = (flags[0] >> 1) & 1;
     let rel_pos_valid = (flags[0] >> 2) & 1;
     let carr_soln = (flags[0] >> 3) & 0b11;
     let is_moving = (flags[0] >> 5) & 1;
     let ref_pos_miss = (flags[0] >> 6) & 1;
     let ref_obs_miss = (flags[0] >> 7) & 1;
-    let rel_pos_heading_valid = (flags[1] >> 0) & 1;
+    let rel_pos_heading_valid = flags[1] & 1;
     let rel_pos_normalized = (flags[1] >> 1) & 1;
 
     UBXNavRelPosNed {
@@ -444,29 +446,29 @@ pub fn decode_ubx_nav_relposned(data: &Vec<u8>) -> UBXNavRelPosNed {
     }
 }
 
-pub fn decode_ubx_nav_cov_msg(data: &Vec<u8>) -> Option<UBXNavCov> {
-    compare_checksums(&data).expect("ublox checksum error");
+pub fn decode_ubx_nav_cov_msg(data: &[u8]) -> Option<UBXNavCov> {
+    compare_checksums(data).expect("ublox checksum error");
 
-    let payload_length = get_u16_from_le_byte_array(&data, 4) as usize;
+    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
 
     let payload = &data[6..6 + payload_length].to_vec();
 
-    let itow = get_u32_from_le_byte_array(&payload, 0);
+    let itow = get_u32_from_le_byte_array(payload, 0);
     let version = payload[4];
     let pos_cov_valid = payload[5];
     let vel_cov_valid = payload[6];
-    let pos_cov_nn = get_f32_from_le_byte_array(&payload, 16) as f32;
-    let pos_cov_ne = get_f32_from_le_byte_array(&payload, 20) as f32;
-    let pos_cov_nd = get_f32_from_le_byte_array(&payload, 24) as f32;
-    let pos_cov_ee = get_f32_from_le_byte_array(&payload, 28) as f32;
-    let pos_cov_ed = get_f32_from_le_byte_array(&payload, 32) as f32;
-    let pos_cov_dd = get_f32_from_le_byte_array(&payload, 36) as f32;
-    let vel_cov_nn = get_f32_from_le_byte_array(&payload, 40) as f32;
-    let vel_cov_ne = get_f32_from_le_byte_array(&payload, 44) as f32;
-    let vel_cov_nd = get_f32_from_le_byte_array(&payload, 48) as f32;
-    let vel_cov_ee = get_f32_from_le_byte_array(&payload, 52) as f32;
-    let vel_cov_ed = get_f32_from_le_byte_array(&payload, 56) as f32;
-    let vel_cov_dd = get_f32_from_le_byte_array(&payload, 60) as f32;
+    let pos_cov_nn = get_f32_from_le_byte_array(payload, 16) as f32;
+    let pos_cov_ne = get_f32_from_le_byte_array(payload, 20) as f32;
+    let pos_cov_nd = get_f32_from_le_byte_array(payload, 24) as f32;
+    let pos_cov_ee = get_f32_from_le_byte_array(payload, 28) as f32;
+    let pos_cov_ed = get_f32_from_le_byte_array(payload, 32) as f32;
+    let pos_cov_dd = get_f32_from_le_byte_array(payload, 36) as f32;
+    let vel_cov_nn = get_f32_from_le_byte_array(payload, 40) as f32;
+    let vel_cov_ne = get_f32_from_le_byte_array(payload, 44) as f32;
+    let vel_cov_nd = get_f32_from_le_byte_array(payload, 48) as f32;
+    let vel_cov_ee = get_f32_from_le_byte_array(payload, 52) as f32;
+    let vel_cov_ed = get_f32_from_le_byte_array(payload, 56) as f32;
+    let vel_cov_dd = get_f32_from_le_byte_array(payload, 60) as f32;
 
     Some(UBXNavCov {
         itow,

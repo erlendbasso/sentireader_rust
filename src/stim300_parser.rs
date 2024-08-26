@@ -90,7 +90,7 @@ const SENSOR_AXIS_OUTPUT_BYTE_LENGTH: usize = 3;
 const TEMP_OUTPUT_BYTE_LENGTH: usize = 2;
 
 #[doc = "parse_stim300_data"]
-pub fn parse_stim300_data(data: &Vec<u8>) -> Result<IMUMessage> {
+pub fn parse_stim300_data(data: &[u8]) -> Result<IMUMessage> {
     assert!(data.len() >= MIN_DATA_LENGTH); // minimum number of bytes
     let (imu_mode, data_length, num_crc_dummy_bytes) = get_data_information(data[0])?;
 
@@ -257,7 +257,7 @@ fn get_data_information(data_identifier: u8) -> Result<(IMUMode, usize, usize)> 
     }
 }
 
-fn compute_angular_rate_vector(data: &Vec<u8>) -> Option<[f32; 3]> {
+fn compute_angular_rate_vector(data: &[u8]) -> Option<[f32; 3]> {
     Some([
         convert_gyro_output_to_angular_rate(
             &data[GYRO_OUTPUT_START_POS..GYRO_OUTPUT_START_POS + SENSOR_AXIS_OUTPUT_BYTE_LENGTH],
@@ -280,7 +280,7 @@ fn convert_gyro_output_to_angular_rate(output: &[u8]) -> f32 {
     let ar1_msb = ((output[0] >> 7_u8) & 1_u8) as f32;
     let div = get_gyro_output_divisor();
     let base: f32 = 2.0;
-    return (ar1 * base.powf(16.0) + ar2 * base.powf(8.0) + ar3 - ar1_msb * base.powf(24.0)) / div;
+    (ar1 * base.powf(16.0) + ar2 * base.powf(8.0) + ar3 - ar1_msb * base.powf(24.0)) / div
 }
 
 fn convert_accmeter_output_to_acceleration(output: &[u8]) -> f32 {
@@ -290,8 +290,7 @@ fn convert_accmeter_output_to_acceleration(output: &[u8]) -> f32 {
     let acc1_msb = ((output[0] >> 7_u8) & 1_u8) as f32;
     let div = get_accmeter_output_divisor();
     let base: f32 = 2.0;
-    return (acc1 * base.powf(16.0) + acc2 * base.powf(8.0) + acc3 - acc1_msb * base.powf(24.0))
-        / div;
+    (acc1 * base.powf(16.0) + acc2 * base.powf(8.0) + acc3 - acc1_msb * base.powf(24.0)) / div
 }
 
 fn get_gyro_output_divisor() -> f32 {
@@ -299,10 +298,10 @@ fn get_gyro_output_divisor() -> f32 {
         GyroOutput::AngularRate | GyroOutput::AverageAngularRate => 14.0,
         GyroOutput::IncrementalAngle => 21.0,
     };
-    return f32::powf(2.0, exponent);
+    f32::powf(2.0, exponent)
 }
 
-fn compute_acceleration_vector(data: &Vec<u8>) -> Option<[f32; 3]> {
+fn compute_acceleration_vector(data: &[u8]) -> Option<[f32; 3]> {
     Some([
         convert_accmeter_output_to_acceleration(
             &data[ACCMETER_OUTPUT_START_POS
@@ -336,10 +335,10 @@ fn get_accmeter_output_divisor() -> f32 {
             &_ => 23.0,
         },
     };
-    return f32::powf(2.0, exponent);
+    f32::powf(2.0, exponent)
 }
 
-fn compute_inclination_vector(data: &Vec<u8>, start_index: usize) -> Option<[f32; 3]> {
+fn compute_inclination_vector(data: &[u8], start_index: usize) -> Option<[f32; 3]> {
     Some([
         convert_inclmeter_output_to_inclination(
             &data[start_index..start_index + SENSOR_AXIS_OUTPUT_BYTE_LENGTH],
@@ -362,8 +361,7 @@ fn convert_inclmeter_output_to_inclination(output: &[u8]) -> f32 {
     let acc1_msb = ((output[0] >> 7_u8) & 1_u8) as f32;
     let div = get_inclmeter_output_divisor();
     let base: f32 = 2.0;
-    return (acc1 * base.powf(16.0) + acc2 * base.powf(8.0) + acc3 - acc1_msb * base.powf(24.0))
-        / div;
+    (acc1 * base.powf(16.0) + acc2 * base.powf(8.0) + acc3 - acc1_msb * base.powf(24.0)) / div
 }
 
 fn get_inclmeter_output_divisor() -> f32 {
@@ -371,10 +369,10 @@ fn get_inclmeter_output_divisor() -> f32 {
         InclMeterOutput::Acceleration | InclMeterOutput::AverageAcceleration => 22.0,
         InclMeterOutput::IncrementalVelocity | InclMeterOutput::IntegratedVelocity => 25.0,
     };
-    return f32::powf(2.0, exponent);
+    f32::powf(2.0, exponent)
 }
 
-fn compute_temperature(data: &Vec<u8>, start_index: usize) -> Option<[f32; 3]> {
+fn compute_temperature(data: &[u8], start_index: usize) -> Option<[f32; 3]> {
     Some([
         convert_temp_meas_output_to_temperature(
             &data[start_index..start_index + TEMP_OUTPUT_BYTE_LENGTH],
@@ -393,7 +391,8 @@ fn convert_temp_meas_output_to_temperature(output: &[u8]) -> f32 {
     let t2: f32 = output[1].into();
     let t1_msb = ((output[0] >> 7_u8) & 1_u8) as f32;
     let base: f32 = 2.0;
-    return (t1 * base.powf(8.0) + t2 - t1_msb * base.powf(16.0)) / base.powf(8.0);
+
+    (t1 * base.powf(8.0) + t2 - t1_msb * base.powf(16.0)) / base.powf(8.0)
 }
 
 fn compute_latency(data: &[u8]) -> Option<f32> {
@@ -403,14 +402,14 @@ fn compute_latency(data: &[u8]) -> Option<f32> {
     Some(lt1 * base.powf(8.0) + lt2)
 }
 
-fn compute_checksum(data: &Vec<u8>, data_length: usize, num_crc_dummy_bytes: usize) -> u32 {
-    let mut crc_data: Vec<u8> = data[..data_length - 4].iter().cloned().collect();
+fn compute_checksum(data: &[u8], data_length: usize, num_crc_dummy_bytes: usize) -> u32 {
+    let mut crc_data: Vec<u8> = data[..data_length - 4].to_vec();
     crc_data.resize(crc_data.len() + num_crc_dummy_bytes, 0);
     //println!("crc_data: {:?}", crc_data);
-    CHECKSUM_ALGORITHM.checksum(&crc_data.as_slice())
+    CHECKSUM_ALGORITHM.checksum(crc_data.as_slice())
 }
 
-fn get_received_checksum(data: &Vec<u8>, data_length: usize) -> u32 {
+fn get_received_checksum(data: &[u8], data_length: usize) -> u32 {
     //println!("relevant data: {:?}", &data[data_length - 4..data_length]);
     get_u32_from_be_byte_array(data, data_length - 4)
 }

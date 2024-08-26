@@ -57,7 +57,7 @@ async fn main() -> io::Result<()> {
 
     let mut remote_addr = cfg.remote_ip;
     let remote_port = cfg.remote_port.to_string();
-    remote_addr.push_str(":");
+    remote_addr.push(':');
     remote_addr.push_str(&remote_port);
 
     println!("Remote addr: {}", remote_addr);
@@ -139,10 +139,7 @@ async fn main() -> io::Result<()> {
                 let lin_accel = R_IMU_FRD.to_rotation_matrix().matrix()
                     * Vector3::new(lin_accel[0], lin_accel[1], lin_accel[2]);
 
-                let imu_data = IMUData {
-                    lin_accel: lin_accel,
-                    ang_vel: ang_vel,
-                };
+                let imu_data = IMUData { lin_accel, ang_vel };
 
                 let serialized = rmp_serde::to_vec(&imu_data).unwrap();
                 let _len = serialized.len();

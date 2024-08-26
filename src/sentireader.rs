@@ -53,7 +53,7 @@ impl SentiReader {
         let reader = BufReader::new(port);
 
         Self {
-            reader: reader,
+            reader,
             serial_buf: vec![0; BUF_SIZE],
             data_length: 0,
             protocol_version: 0,
@@ -89,9 +89,9 @@ impl SentiReader {
             .expect("Should have read two bytes here.");
 
         while buffer[0] as char != '^' || !(buffer[1] as char == 'B' || buffer[1] as char == 'C') {
-            max_skip = max_skip - 1;
-            if max_skip <= 0 {
-                Err("Negative max_skip.")?;
+            max_skip -= 1;
+            if max_skip == 0 {
+                Err("Zero max_skip.")?;
             }
 
             buffer.remove(0);
@@ -105,7 +105,7 @@ impl SentiReader {
 
         if buffer[1] as char == 'C' {
             self.has_onboard_timestamp = true;
-            buffer[1] = 'B' as u8;
+            buffer[1] = b'B'
         }
 
         self.serial_buf = buffer;

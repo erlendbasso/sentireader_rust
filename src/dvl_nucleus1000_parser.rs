@@ -1,4 +1,4 @@
-use nalgebra::{Vector3, UnitQuaternion, Quaternion};
+use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 
 use crate::utils::get_f32_from_byte_array;
 
@@ -114,13 +114,13 @@ fn get_data_information(data_id: u8) -> DataID {
     }
 }
 
-pub fn get_data_id(data: &Vec<u8>) -> DataID {
+pub fn get_data_id(data: &[u8]) -> DataID {
     let data_series_id = data[2];
 
     get_data_information(data_series_id)
 }
 
-fn remove_header_data(data: &Vec<u8>) -> Vec<u8> {
+fn remove_header_data(data: &[u8]) -> Vec<u8> {
     data[HEADER_SIZE..].to_vec()
 }
 
@@ -192,22 +192,18 @@ fn remove_header_data(data: &Vec<u8>) -> Vec<u8> {
 //     }
 // }
 
-pub fn parse_track_data(data: &Vec<u8>, data_id: DataID) -> ExtendedDVLMessage {
+pub fn parse_track_data(data: &[u8], data_id: DataID) -> ExtendedDVLMessage {
     let track_type = match data_id {
         DataID::BottomTrackData => TrackMode::BottomTrack,
         DataID::WaterTrackData => TrackMode::WaterTrack,
         _ => panic!("Unknown track type"),
     };
 
-    let data = remove_header_data(&data);
+    let data = remove_header_data(data);
 
     let status = data[12..16].to_vec();
 
-    let beams_valid = [
-        (status[0] >> 0) & 1,
-        (status[0] >> 1) & 1,
-        (status[0] >> 2) & 1,
-    ];
+    let beams_valid = [status[0] & 1, (status[0] >> 1) & 1, (status[0] >> 2) & 1];
 
     let vel_valid = [
         (status[1] >> 1) & 1,
@@ -246,13 +242,13 @@ pub fn parse_track_data(data: &Vec<u8>, data_id: DataID) -> ExtendedDVLMessage {
     }
 }
 
-pub fn parse_altimeter_data(data: &Vec<u8>) -> AltimeterMessage {
-    let data = remove_header_data(&data);
+pub fn parse_altimeter_data(data: &[u8]) -> AltimeterMessage {
+    let data = remove_header_data(data);
     let status = data[12..16].to_vec();
 
-    let altimeter_dist_valid = (status[0] >> 0) & 1;
+    let altimeter_dist_valid = status[0] & 1;
     let altimeter_quality_valid = (status[0] >> 1) & 1;
-    let pressure_valid = (status[2] >> 0) & 1;
+    let pressure_valid = status[2] & 1;
     let temp_valid = (status[2] >> 1) & 1;
 
     AltimeterMessage {
@@ -260,27 +256,15 @@ pub fn parse_altimeter_data(data: &Vec<u8>) -> AltimeterMessage {
         temperature: get_f32_from_byte_array(&data, 28),
         sound_speed: get_f32_from_byte_array(&data, 24),
         altitude: get_f32_from_byte_array(&data, 36),
-        pressure_valid: match pressure_valid {
-            1 => true,
-            _ => false,
-        },
-        temperature_valid: match temp_valid {
-            1 => true,
-            _ => false,
-        },
-        altimeter_dist_valid: match altimeter_dist_valid {
-            1 => true,
-            _ => false,
-        },
-        altimeter_quality_valid: match altimeter_quality_valid {
-            1 => true,
-            _ => false,
-        },
+        pressure_valid: matches!(pressure_valid, 1),
+        temperature_valid: matches!(temp_valid, 1),
+        altimeter_dist_valid: matches!(altimeter_dist_valid, 1),
+        altimeter_quality_valid: matches!(altimeter_quality_valid, 1),
     }
 }
 
-pub fn parse_magnetometer_data(data: &Vec<u8>) -> Vector3<f32> {
-    let data = remove_header_data(&data);
+pub fn parse_magnetometer_data(data: &[u8]) -> Vector3<f32> {
+    let data = remove_header_data(data);
     let offset = data[1] as usize;
 
     let status = data[12..16].to_vec();
@@ -295,8 +279,8 @@ pub fn parse_magnetometer_data(data: &Vec<u8>) -> Vector3<f32> {
     )
 }
 
-pub fn parse_ahrs_data(data: &Vec<u8>) -> AHRSMessage {
-    let data = remove_header_data(&data);
+pub fn parse_ahrs_data(data: &[u8]) -> AHRSMessage {
+    let data = remove_header_data(data);
     let offset = data[1] as usize;
 
     let orientation = UnitQuaternion::new_normalize(Quaternion::new(
@@ -304,8 +288,7 @@ pub fn parse_ahrs_data(data: &Vec<u8>) -> AHRSMessage {
         get_f32_from_byte_array(&data, offset + 16),
         get_f32_from_byte_array(&data, offset + 20),
         get_f32_from_byte_array(&data, offset + 24),
-    )
-    );
+    ));
 
     AHRSMessage {
         roll: get_f32_from_byte_array(&data, offset),
