@@ -4,12 +4,13 @@ use std::error;
 use crate::utils::get_u32_from_be_byte_array;
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
+#[allow(dead_code)]
 enum GyroOutput {
     AngularRate,
     IncrementalAngle,
     AverageAngularRate,
 }
-
+#[allow(dead_code)]
 enum AccMeterOutput {
     Acceleration,
     IncrementalVelocity,
@@ -17,6 +18,7 @@ enum AccMeterOutput {
     IntegratedVelocity,
 }
 
+#[allow(dead_code)]
 enum InclMeterOutput {
     Acceleration,
     IncrementalVelocity,

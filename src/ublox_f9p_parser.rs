@@ -135,12 +135,31 @@ pub struct UBXNavCov {
     pub vel_cov_dd: f32,
 }
 
-pub enum MessageType {
+#[derive(Debug)]
+pub struct UBXNavSvIn {
+    pub version: u8,
+    pub itow: u32,
+    pub dur: u32,
+    pub mean_x: i32,
+    pub mean_y: i32,
+    pub mean_z: i32,
+    pub mean_x_hp: i8,
+    pub mean_y_hp: i8,
+    pub mean_z_hp: i8,
+    pub mean_acc: u32,
+    pub obs: u32,
+    pub valid: u8,
+    pub active: u8,
+    pub reserved: u16,
+}
+
+pub enum NavMessageType {
     NavPvt,
     NavRelPosNed,
     NavHPPosECEF,
     NavCov,
     NavHPPosLLH,
+    SvIn,
     Unknown,
 }
 
@@ -158,15 +177,16 @@ fn get_msg_class(msg_class: u8) -> UBXMessageClass {
     }
 }
 
-fn get_data_information(data_id: u8) -> MessageType {
+fn get_data_information(data_id: u8) -> NavMessageType {
     match data_id {
-        7 => MessageType::NavPvt,
-        19 => MessageType::NavHPPosECEF,
-        20 => MessageType::NavHPPosLLH,
-        54 => MessageType::NavCov,
-        60 => MessageType::NavRelPosNed,
+        7 => NavMessageType::NavPvt,
+        19 => NavMessageType::NavHPPosECEF,
+        20 => NavMessageType::NavHPPosLLH,
+        54 => NavMessageType::NavCov,
+        59 => NavMessageType::SvIn,
+        60 => NavMessageType::NavRelPosNed,
         // _ => panic!("Unknown data id: {}", data_id),
-        _ => MessageType::Unknown,
+        _ => NavMessageType::Unknown,
     }
 }
 
@@ -175,14 +195,14 @@ pub fn get_ubx_message_class(data: &[u8]) -> UBXMessageClass {
     get_msg_class(msg_class)
 }
 
-pub fn get_message_type(data: &[u8]) -> MessageType {
+pub fn get_message_type(data: &[u8]) -> NavMessageType {
     let msg_class = get_msg_class(data[2]);
     match msg_class {
         UBXMessageClass::Nav => {
             // println!("data_id: {}", data_id);
             get_data_information(data[3])
         }
-        _ => MessageType::Unknown,
+        _ => NavMessageType::Unknown,
     }
 }
 
@@ -391,10 +411,10 @@ pub fn decode_ubx_nav_relposned(data: &[u8]) -> UBXNavRelPosNed {
     let version = payload[0];
     let ref_station_id = get_u16_from_le_byte_array(payload, 2);
     let itow = get_u32_from_le_byte_array(payload, 4);
-    let rel_pos_n = get_i32_from_le_byte_array(payload, 8) as f32 * 1e-2; // unit [cm]
-    let rel_pos_e = get_i32_from_le_byte_array(payload, 12) as f32 * 1e-2; // unit [cm]
-    let rel_pos_d = get_i32_from_le_byte_array(payload, 16) as f32 * 1e-2; // unit [cm]
-    let rel_pos_length = get_u32_from_le_byte_array(payload, 20) as f32 * 1e-2; // unit [cm]
+    let rel_pos_n = get_i32_from_le_byte_array(payload, 8) as f32; // unit [cm]
+    let rel_pos_e = get_i32_from_le_byte_array(payload, 12) as f32; // unit [cm]
+    let rel_pos_d = get_i32_from_le_byte_array(payload, 16) as f32; // unit [cm]
+    let rel_pos_length = get_u32_from_le_byte_array(payload, 20) as f32; // unit [cm]
     let rel_pos_heading = (get_i32_from_le_byte_array(payload, 24) as f32) * 1e-5; // unit [deg]
     let rel_pos_hpn = payload[32] as i8; // unit [mm]
     let rel_pos_hpe = payload[33] as i8; // unit [mm]
@@ -487,6 +507,46 @@ pub fn decode_ubx_nav_cov_msg(data: &[u8]) -> Option<UBXNavCov> {
         vel_cov_ee,
         vel_cov_ed,
         vel_cov_dd,
+    })
+}
+
+pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Option<UBXNavSvIn> {
+    compare_checksums(data).expect("ublox checksum error");
+
+    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
+
+    let payload = &data[6..6 + payload_length].to_vec();
+
+    let version = payload[0];
+    let itow = get_u32_from_le_byte_array(payload, 4);
+    let dur = get_u32_from_le_byte_array(payload, 8);
+    let mean_x = get_i32_from_le_byte_array(payload, 12);
+    let mean_y = get_i32_from_le_byte_array(payload, 16);
+    let mean_z = get_i32_from_le_byte_array(payload, 20);
+    let mean_x_hp = payload[24] as i8;
+    let mean_y_hp = payload[25] as i8;
+    let mean_z_hp = payload[26] as i8;
+    let mean_acc = get_u32_from_le_byte_array(payload, 28);
+    let obs = get_u32_from_le_byte_array(payload, 32);
+    let valid = payload[36];
+    let active = payload[37];
+    let reserved = get_u16_from_le_byte_array(payload, 38);
+
+    Some(UBXNavSvIn {
+        version,
+        itow,
+        dur,
+        mean_x,
+        mean_y,
+        mean_z,
+        mean_x_hp,
+        mean_y_hp,
+        mean_z_hp,
+        mean_acc,
+        obs,
+        valid,
+        active,
+        reserved,
     })
 }
 

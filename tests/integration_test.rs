@@ -166,7 +166,7 @@ mod tests {
                 let msg_type = ublox_f9p_parser::get_message_type(&sensor_data);
 
                 match msg_type {
-                    ublox_f9p_parser::MessageType::NavPvt => {
+                    ublox_f9p_parser::NavMessageType::NavPvt => {
                         let nav_pvt_msg = ublox_f9p_parser::decode_ubx_nav_pvt_msg(&sensor_data);
                         println!("nav_pvt_msg: {:?}", nav_pvt_msg);
                         println!("HEADING: {}", nav_pvt_msg.head_veh);
@@ -174,7 +174,7 @@ mod tests {
                         println!("HEIGHT: {}", nav_pvt_msg.height);
                         println!("HEIGHT msl: {}", nav_pvt_msg.h_msl);
                     }
-                    ublox_f9p_parser::MessageType::NavRelPosNed => {
+                    ublox_f9p_parser::NavMessageType::NavRelPosNed => {
                         let nav_rel_pos_ned_msg =
                             ublox_f9p_parser::decode_ubx_nav_relposned(&sensor_data);
                         println!("nav_rel_pos_ned_msg: {:?}", nav_rel_pos_ned_msg);
