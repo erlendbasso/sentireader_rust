@@ -135,6 +135,7 @@ pub struct UBXNavCov {
     pub vel_cov_dd: f32,
 }
 
+#[derive(Debug)]
 pub enum MessageType {
     NavPvt,
     NavRelPosNed,
