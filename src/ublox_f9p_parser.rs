@@ -136,8 +136,6 @@ pub struct UBXNavCov {
 }
 
 #[derive(Debug)]
-pub enum MessageType {
-#[derive(Debug)]
 pub struct UBXNavSvIn {
     pub version: u8,
     pub itow: u32,
