@@ -17,6 +17,33 @@ const TOA_LENGTH: usize = 4;
 const TOT_LENGTH: usize = 4;
 const BUF_SIZE: usize = 512;
 const SENTIBOARD_MAX_SKIP: usize = 512;
+const MIN_DATA_LENGTH: usize = TOV_LENGTH + TOA_LENGTH + TOT_LENGTH;
+
+fn slice_to_array<const N: usize>(data: &[u8], index: usize) -> Result<[u8; N]> {
+    let end = index
+        .checked_add(N)
+        .ok_or("Index overflow when slicing bytes.")?;
+    let slice = data
+        .get(index..end)
+        .ok_or("Not enough bytes available for requested slice.")?;
+
+    let arr: [u8; N] = slice
+        .try_into()
+        .map_err(|_| "Slice length mismatch when converting array.")?;
+    Ok(arr)
+}
+
+fn get_u16_checked(data: &[u8], index: usize) -> Result<u16> {
+    Ok(u16::from_ne_bytes(slice_to_array::<2>(data, index)?))
+}
+
+fn get_u32_checked(data: &[u8], index: usize) -> Result<u32> {
+    Ok(u32::from_ne_bytes(slice_to_array::<4>(data, index)?))
+}
+
+fn get_f64_checked(data: &[u8], index: usize) -> Result<f64> {
+    Ok(f64::from_ne_bytes(slice_to_array::<8>(data, index)?))
+}
 
 #[derive(Clone)]
 pub struct SentiboardMessage {
@@ -44,37 +71,42 @@ pub struct SentiReader {
 }
 
 impl SentiReader {
-    pub fn new(port_name: String, baud_rate: u32) -> SentiReader {
+    pub fn new(port_name: String, baud_rate: u32) -> Result<SentiReader> {
         let port = serialport::new(port_name, baud_rate)
             .timeout(Duration::from_secs_f32(1000.0))
-            .open()
-            .expect("Port should have opened.");
+            .open()?;
 
         let reader = BufReader::new(port);
 
-        Self {
+        Ok(Self {
             reader: reader,
             serial_buf: vec![0; BUF_SIZE],
             data_length: 0,
             protocol_version: 0,
             has_onboard_timestamp: false,
             sentiboard_data: vec![0; BUF_SIZE],
-        }
+        })
     }
 
     fn compare_header_checksum(&self) -> Result<()> {
-        let header_checksum =
-            get_u16_from_byte_array(&self.serial_buf, SENTIBOARD_HEADER_CHECKSUM_POS);
+        let header_checksum = get_u16_checked(&self.serial_buf, SENTIBOARD_HEADER_CHECKSUM_POS)?;
+        let header_slice = self
+            .serial_buf
+            .get(0..SENTIBOARD_HEADER_CHECKSUM_POS)
+            .ok_or("Header shorter than checksum position.")?;
 
-        compare_checksum(
-            &self.serial_buf[0..SENTIBOARD_HEADER_CHECKSUM_POS],
-            header_checksum,
-        )
+        compare_checksum(header_slice, header_checksum)
     }
 
     fn compare_data_checksum(&self) -> Result<()> {
+        if self.serial_buf.len()
+            < HEADER_SIZE + self.data_length as usize + CHECKSUM_SIZE
+        {
+            Err("Not enough bytes to validate data checksum.")?;
+        }
+
         let data_checksum =
-            get_u16_from_byte_array(&self.serial_buf, HEADER_SIZE + self.data_length as usize);
+            get_u16_checked(&self.serial_buf, HEADER_SIZE + self.data_length as usize)?;
 
         compare_checksum(&self.sentiboard_data, data_checksum)
     }
@@ -82,25 +114,23 @@ impl SentiReader {
     fn sync_package(&mut self) -> Result<()> {
         let mut max_skip = SENTIBOARD_MAX_SKIP;
 
-        let mut buffer: Vec<u8> = vec![0; 2];
+        let mut buffer: [u8; 2] = [0; 2];
 
-        self.reader
-            .read_exact(buffer.as_mut_slice())
-            .expect("Should have read two bytes here.");
+        self.reader.read_exact(&mut buffer)?;
 
-        while buffer[0] as char != '^' || !(buffer[1] as char == 'B' || buffer[1] as char == 'C') {
-            max_skip = max_skip - 1;
-            if max_skip <= 0 {
-                Err("Negative max_skip.")?;
+        while buffer[0] as char != '^' || !(buffer[1] as char == 'B' || buffer[1] as char == 'C')
+        {
+            if max_skip == 0 {
+                Err("Failed to resync after skipping bytes.")?;
             }
 
-            buffer.remove(0);
+            max_skip -= 1;
+
+            buffer[0] = buffer[1];
 
             let mut byte: u8 = 0;
-            self.reader
-                .read_exact(std::slice::from_mut(&mut byte))
-                .expect("Should have read a byte here.");
-            buffer.push(byte);
+            self.reader.read_exact(std::slice::from_mut(&mut byte))?;
+            buffer[1] = byte;
         }
 
         if buffer[1] as char == 'C' {
@@ -108,7 +138,8 @@ impl SentiReader {
             buffer[1] = 'B' as u8;
         }
 
-        self.serial_buf = buffer;
+        self.serial_buf.clear();
+        self.serial_buf.extend_from_slice(&buffer);
 
         Ok(())
     }
@@ -127,52 +158,58 @@ impl SentiReader {
         };
 
         // read rest of the header (except the first two sync bytes)
-        let mut header_buffer: Vec<u8> = vec![0; HEADER_SIZE - 2];
-        self.reader
-            .read_exact(header_buffer.as_mut_slice())
-            .expect("Should have read a buffer of HEADER_SIZE - 2 in length here.");
+        let mut header_buffer: [u8; HEADER_SIZE - 2] = [0; HEADER_SIZE - 2];
+        self.reader.read_exact(header_buffer.as_mut_slice())?;
 
-        self.serial_buf.append(&mut header_buffer);
+        self.serial_buf.extend_from_slice(&header_buffer);
 
         self.compare_header_checksum()?;
 
-        if self.has_onboard_timestamp {
-            sentiboard_msg.onboard_timestamp = Some(get_f64_from_byte_array(&self.serial_buf, 8));
+        self.data_length = get_u16_checked(&self.serial_buf, 2)?;
+        sentiboard_msg.sensor_id = self.serial_buf.get(4).copied();
+        self.protocol_version = *self.serial_buf.get(5).ok_or("Missing protocol version.")?;
+
+        if (self.data_length as usize) < MIN_DATA_LENGTH {
+            Err("Data length shorter than required metadata.")?;
         }
 
-        self.data_length = get_u16_from_byte_array(&self.serial_buf, 2);
-        sentiboard_msg.sensor_id = Some(self.serial_buf[4]);
-        self.protocol_version = self.serial_buf[5];
+        if (HEADER_SIZE + self.data_length as usize + CHECKSUM_SIZE) > BUF_SIZE {
+            Err("Data length exceeds internal buffer capacity.")?;
+        }
 
         let mut package_buffer: Vec<u8> = vec![0; self.data_length as usize + CHECKSUM_SIZE];
 
         // read the rest of the package and append it to serial buffer
-        self.reader
-            .read_exact(package_buffer.as_mut_slice())
-            .expect("Should have read a buffer of data_length + CHECKSUM_SIZE here.");
-        self.serial_buf.append(&mut package_buffer);
+        self.reader.read_exact(package_buffer.as_mut_slice())?;
+        self.serial_buf.extend_from_slice(&package_buffer);
 
-        sentiboard_msg.time_of_validity = Some(get_u32_from_byte_array(
-            &self.serial_buf,
-            SENTIBOARD_TOV_POS,
-        ));
-        sentiboard_msg.time_of_arrival = Some(get_u32_from_byte_array(
-            &self.serial_buf,
-            SENTIBOARD_TOA_POS,
-        ));
-        sentiboard_msg.time_of_transport = Some(get_u32_from_byte_array(
-            &self.serial_buf,
-            SENTIBOARD_TOT_POS,
-        ));
+        let payload_end = HEADER_SIZE + self.data_length as usize;
+
+        if payload_end > self.serial_buf.len() {
+            Err("Incomplete payload received.")?;
+        }
+
+        sentiboard_msg.time_of_validity =
+            Some(get_u32_checked(&self.serial_buf, SENTIBOARD_TOV_POS)?);
+        sentiboard_msg.time_of_arrival =
+            Some(get_u32_checked(&self.serial_buf, SENTIBOARD_TOA_POS)?);
+        sentiboard_msg.time_of_transport =
+            Some(get_u32_checked(&self.serial_buf, SENTIBOARD_TOT_POS)?);
 
         // self.sentiboard_data.resize(self.data_length as usize + HEADER_SIZE, 0);
         // sentiboard_msg.sensor_data.resize(self.data_length as usize - TOV_LENGTH - TOA_LENGTH - TOT_LENGTH , 0);
 
-        self.sentiboard_data =
-            self.serial_buf[HEADER_SIZE..(self.data_length as usize + HEADER_SIZE)].to_vec();
+        self.sentiboard_data = self
+            .serial_buf
+            .get(HEADER_SIZE..payload_end)
+            .ok_or("Payload slice is out of bounds.")?
+            .to_vec();
 
-        sentiboard_msg.sensor_data =
-            Some(self.sentiboard_data[TOV_LENGTH + TOA_LENGTH + TOT_LENGTH..].to_vec());
+        let sensor_data_start = SENTIBOARD_TOT_POS + TOT_LENGTH;
+        sentiboard_msg.sensor_data = Some(
+            self.serial_buf[sensor_data_start..payload_end]
+                .to_vec(),
+        );
 
         self.compare_data_checksum()?;
 
@@ -200,11 +237,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn init_sentireader() {
-        let mut sentireader = SentiReader::new("/dev/tty.usbmodem223103".to_string(), 115200);
+    fn init_sentireader() -> Result<()> {
+        let mut sentireader = SentiReader::new("/dev/tty.usbmodem223103".to_string(), 115200)?;
 
         for _i in 0..100 {
-            let sentiboard_msg = sentireader.read_package().unwrap();
+            let sentiboard_msg = sentireader.read_package()?;
             println!("{}, msg: {:?}", _i, sentiboard_msg.onboard_timestamp);
             println!(
                 "tov {:?} toa: {:?}",
@@ -212,5 +249,7 @@ mod tests {
             );
             // println!("toa: {}", sentireader.sentiboard_msg.t\ime_of_arrival);
         }
+
+        Ok(())
     }
 }
