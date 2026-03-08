@@ -1,7 +1,7 @@
 use crate::utils::*;
 use std::error;
 use std::io::{BufReader, Read};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
@@ -27,6 +27,7 @@ pub struct SentiboardMessage {
     pub time_of_transport: Option<u32>,
 
     pub onboard_timestamp: Option<f64>,
+    pub host_receive_time: Option<SystemTime>,
 
     pub sensor_data: Option<Vec<u8>>,
 
@@ -122,6 +123,7 @@ impl SentiReader {
             time_of_arrival: None,
             time_of_transport: None,
             onboard_timestamp: None,
+            host_receive_time: None,
             sensor_data: None,
             initialized: None,
         };
@@ -150,7 +152,9 @@ impl SentiReader {
         self.reader
             .read_exact(package_buffer.as_mut_slice())
             .expect("Should have read a buffer of data_length + CHECKSUM_SIZE here.");
+        let receive_time = SystemTime::now();
         self.serial_buf.append(&mut package_buffer);
+        sentiboard_msg.host_receive_time = Some(receive_time);
 
         sentiboard_msg.time_of_validity = Some(get_u32_from_byte_array(
             &self.serial_buf,
