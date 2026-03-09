@@ -80,9 +80,9 @@ impl SentiReader {
         compare_checksum(&self.sentiboard_data, data_checksum)
     }
 
-    fn sync_package(&mut self) -> Result<()> {
+    // change signature
+    fn sync_package(&mut self) -> Result<SystemTime> {
         let mut max_skip = SENTIBOARD_MAX_SKIP;
-
         let mut buffer: Vec<u8> = vec![0; 2];
 
         self.reader
@@ -104,6 +104,9 @@ impl SentiReader {
             buffer.push(byte);
         }
 
+        // We just observed the sync bytes; timestamp as close as we can
+        let sync_time = SystemTime::now();
+
         if buffer[1] as char == 'C' {
             self.has_onboard_timestamp = true;
             buffer[1] = b'B'
@@ -111,11 +114,11 @@ impl SentiReader {
 
         self.serial_buf = buffer;
 
-        Ok(())
+        Ok(sync_time)
     }
 
     pub fn read_package(&mut self) -> Result<SentiboardMessage> {
-        self.sync_package()?;
+        let sync_time = self.sync_package()?;  // <-- now we get an early timestamp
 
         let mut sentiboard_msg: SentiboardMessage = SentiboardMessage {
             sensor_id: None,
@@ -123,7 +126,7 @@ impl SentiReader {
             time_of_arrival: None,
             time_of_transport: None,
             onboard_timestamp: None,
-            host_receive_time: None,
+            host_receive_time: Some(sync_time),
             sensor_data: None,
             initialized: None,
         };
@@ -152,9 +155,7 @@ impl SentiReader {
         self.reader
             .read_exact(package_buffer.as_mut_slice())
             .expect("Should have read a buffer of data_length + CHECKSUM_SIZE here.");
-        let receive_time = SystemTime::now();
         self.serial_buf.append(&mut package_buffer);
-        sentiboard_msg.host_receive_time = Some(receive_time);
 
         sentiboard_msg.time_of_validity = Some(get_u32_from_byte_array(
             &self.serial_buf,
