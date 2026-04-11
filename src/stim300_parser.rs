@@ -443,7 +443,7 @@ mod tests {
 
         let imu_msg = match parse_stim300_data(&data) {
             Ok(imu_msg) => imu_msg,
-            Err(e) => IMUMessage {
+            Err(_) => IMUMessage {
                 ..Default::default()
             },
         };

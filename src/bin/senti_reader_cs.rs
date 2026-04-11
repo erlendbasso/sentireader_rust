@@ -187,7 +187,6 @@ async fn main() -> io::Result<()> {
             _ => continue,
         }
     }
-    Ok(())
 }
 
 fn get_sensor_id(id: u8) -> Result<SensorID, &'static str> {
