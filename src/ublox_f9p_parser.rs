@@ -153,16 +153,27 @@ pub struct UBXNavSvIn {
     pub reserved: u16,
 }
 
-pub enum NavMessageType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UbxMessageType {
     NavPvt,
     NavRelPosNed,
     NavHPPosECEF,
     NavCov,
     NavHPPosLLH,
     SvIn,
+    RxmRawx,
+    RxmSfrbx,
+    RxmMeasx,
+    RxmRtcm,
+    RxmSpartn,
+    RxmCor,
+    RxmPmreq,
     Unknown,
 }
 
+pub type NavMessageType = UbxMessageType;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UBXMessageClass {
     Nav,
     Receiver,
@@ -177,32 +188,65 @@ fn get_msg_class(msg_class: u8) -> UBXMessageClass {
     }
 }
 
-fn get_data_information(data_id: u8) -> NavMessageType {
+fn get_data_information(msg_class: UBXMessageClass, data_id: u8) -> UbxMessageType {
+    match msg_class {
+        UBXMessageClass::Nav => get_nav_message_type_from_id(data_id),
+        UBXMessageClass::Receiver => get_receiver_message_type(data_id),
+        UBXMessageClass::Unknown => UbxMessageType::Unknown,
+    }
+}
+
+fn get_nav_message_type_from_id(data_id: u8) -> UbxMessageType {
     match data_id {
-        7 => NavMessageType::NavPvt,
-        19 => NavMessageType::NavHPPosECEF,
-        20 => NavMessageType::NavHPPosLLH,
-        54 => NavMessageType::NavCov,
-        59 => NavMessageType::SvIn,
-        60 => NavMessageType::NavRelPosNed,
+        7 => UbxMessageType::NavPvt,
+        19 => UbxMessageType::NavHPPosECEF,
+        20 => UbxMessageType::NavHPPosLLH,
+        54 => UbxMessageType::NavCov,
+        59 => UbxMessageType::SvIn,
+        60 => UbxMessageType::NavRelPosNed,
         // _ => panic!("Unknown data id: {}", data_id),
-        _ => NavMessageType::Unknown,
+        _ => UbxMessageType::Unknown,
+    }
+}
+
+fn get_receiver_message_type(data_id: u8) -> UbxMessageType {
+    match data_id {
+        19 => UbxMessageType::RxmSfrbx,
+        20 => UbxMessageType::RxmMeasx,
+        21 => UbxMessageType::RxmRawx,
+        50 => UbxMessageType::RxmRtcm,
+        51 => UbxMessageType::RxmSpartn,
+        52 => UbxMessageType::RxmCor,
+        65 => UbxMessageType::RxmPmreq,
+        _ => UbxMessageType::Unknown,
     }
 }
 
 pub fn get_ubx_message_class(data: &[u8]) -> UBXMessageClass {
-    let msg_class = data[2];
-    get_msg_class(msg_class)
+    match data.get(2) {
+        Some(msg_class) => get_msg_class(*msg_class),
+        None => UBXMessageClass::Unknown,
+    }
 }
 
-pub fn get_message_type(data: &[u8]) -> NavMessageType {
-    let msg_class = get_msg_class(data[2]);
-    match msg_class {
-        UBXMessageClass::Nav => {
-            // println!("data_id: {}", data_id);
-            get_data_information(data[3])
-        }
-        _ => NavMessageType::Unknown,
+pub fn get_message_type(data: &[u8]) -> UbxMessageType {
+    let Some(data_id) = data.get(3) else {
+        return UbxMessageType::Unknown;
+    };
+
+    let msg_class = get_ubx_message_class(data);
+    get_data_information(msg_class, *data_id)
+}
+
+pub fn get_nav_message_type(data: &[u8]) -> UbxMessageType {
+    match get_message_type(data) {
+        msg_type @ (UbxMessageType::NavPvt
+        | UbxMessageType::NavRelPosNed
+        | UbxMessageType::NavHPPosECEF
+        | UbxMessageType::NavCov
+        | UbxMessageType::NavHPPosLLH
+        | UbxMessageType::SvIn) => msg_type,
+        _ => UbxMessageType::Unknown,
     }
 }
 
@@ -574,6 +618,33 @@ mod tests {
     //     assert_eq!(ck_a, 0x0f);
     //     assert_eq!(ck_b, 0x14);
     // }
+
+    #[test]
+    fn test_get_message_type_uses_class_scoped_message_id() {
+        let nav_hpposecef_msg = [0xB5, 0x62, 0x01, 0x13];
+        let rxm_sfrbx_msg = [0xB5, 0x62, 0x02, 0x13];
+
+        assert_eq!(
+            get_message_type(&nav_hpposecef_msg),
+            UbxMessageType::NavHPPosECEF
+        );
+        assert_eq!(get_message_type(&rxm_sfrbx_msg), UbxMessageType::RxmSfrbx);
+    }
+
+    #[test]
+    fn test_get_message_type_detects_receiver_messages() {
+        let rxm_rawx_msg = [0xB5, 0x62, 0x02, 0x15];
+        let rxm_rtcm_msg = [0xB5, 0x62, 0x02, 0x32];
+
+        assert_eq!(get_message_type(&rxm_rawx_msg), UbxMessageType::RxmRawx);
+        assert_eq!(get_message_type(&rxm_rtcm_msg), UbxMessageType::RxmRtcm);
+    }
+
+    #[test]
+    fn test_get_message_type_handles_short_data() {
+        assert_eq!(get_message_type(&[]), UbxMessageType::Unknown);
+        assert_eq!(get_ubx_message_class(&[]), UBXMessageClass::Unknown);
+    }
 
     #[test]
     fn test_parse_ubx_nav_cov_message() {
