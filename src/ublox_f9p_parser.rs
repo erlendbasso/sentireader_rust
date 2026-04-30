@@ -153,6 +153,46 @@ pub struct UBXNavSvIn {
     pub reserved: u16,
 }
 
+#[derive(Debug)]
+pub struct UBXRxmRawx {
+    pub rcv_tow: f64,
+    pub week: u16,
+    pub leap_s: i8,
+    pub num_meas: u8,
+    pub rec_stat: u8,
+    pub version: u8,
+    pub meas: Vec<UBXRawxMeas>,
+}
+
+#[derive(Debug)]
+pub struct UBXRxmSfrbx {
+    pub gnss_id: u8,
+    pub sv_id: u8,
+    pub sig_id: u8,
+    pub freq_id: u8,
+    pub num_words: u8,
+    pub chn: u8,
+    pub version: u8,
+    pub dwrd: Vec<u32>,
+}
+
+#[derive(Debug)]
+pub struct UBXRawxMeas {
+    pub pr_mes: f64,
+    pub cp_mes: f64,
+    pub do_mes: f32,
+    pub gnss_id: u8,
+    pub sv_id: u8,
+    pub sig_id: u8,
+    pub freq_id: u8,
+    pub lock_time: u16,
+    pub cno: u8,
+    pub pr_stdev: f32,
+    pub cp_stdev: f32,
+    pub do_stdev: f32,
+    pub trk_stat: u8,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UbxMessageType {
     NavPvt,
@@ -191,7 +231,7 @@ fn get_msg_class(msg_class: u8) -> UBXMessageClass {
 fn get_data_information(msg_class: UBXMessageClass, data_id: u8) -> UbxMessageType {
     match msg_class {
         UBXMessageClass::Nav => get_nav_message_type_from_id(data_id),
-        UBXMessageClass::Receiver => get_receiver_message_type(data_id),
+        UBXMessageClass::Receiver => get_receiver_message_type_from_id(data_id),
         UBXMessageClass::Unknown => UbxMessageType::Unknown,
     }
 }
@@ -209,7 +249,7 @@ fn get_nav_message_type_from_id(data_id: u8) -> UbxMessageType {
     }
 }
 
-fn get_receiver_message_type(data_id: u8) -> UbxMessageType {
+fn get_receiver_message_type_from_id(data_id: u8) -> UbxMessageType {
     match data_id {
         19 => UbxMessageType::RxmSfrbx,
         20 => UbxMessageType::RxmMeasx,
@@ -591,6 +631,117 @@ pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Option<UBXNavSvIn> {
         valid,
         active,
         reserved,
+    })
+}
+
+pub fn decode_ubx_rxm_rawx_msg(data: &[u8]) -> Result<UBXRxmRawx> {
+    compare_checksums(data)?;
+
+    let payload_length: usize = get_u16_from_le_byte_array(data, 4) as usize;
+    let payload: &[u8] = &data[6..6 + payload_length];
+
+    let rcv_tow: f64 = f64::from_le_bytes(payload[0..8].try_into().unwrap());
+    let week: u16 = get_u16_from_le_byte_array(payload, 8);
+    let leap_s: i8 = payload[10] as i8;
+    let num_meas: u8 = payload[11];
+    let rec_stat: u8 = payload[12];
+    let version: u8 = payload[13];
+    let mut meas: Vec<UBXRawxMeas> = Vec::new();
+    let mut offset: usize = 16;
+
+    for _ in 0..num_meas {
+        let pr_mes: f64 = f64::from_le_bytes(payload[offset..offset + 8].try_into().unwrap());
+        let cp_mes: f64 = f64::from_le_bytes(payload[offset + 8..offset + 16].try_into().unwrap());
+        let do_mes: f32 = f32::from_le_bytes(payload[offset + 16..offset + 20].try_into().unwrap());
+        let gnss_id: u8 = payload[offset + 20];
+        let sv_id: u8 = payload[offset + 21];
+        let sig_id: u8 = payload[offset + 22];
+        let freq_id: u8 = payload[offset + 23];
+        let lock_time: u16 =
+            u16::from_le_bytes(payload[offset + 24..offset + 26].try_into().unwrap());
+        let cno: u8 = payload[offset + 26];
+
+        // Raw bytes:
+        let pr_raw: u8 = payload[offset + 27];
+        let cp_raw: u8 = payload[offset + 28];
+        let do_raw: u8 = payload[offset + 29];
+
+        // Extract lower 4 bits (bits 3..0)
+        let pr_n: u32 = (pr_raw & 0x0F) as u32;
+        let cp_n: u32 = (cp_raw & 0x0F) as u32;
+        let do_n: u32 = (do_raw & 0x0F) as u32;
+
+        // Apply UBX RAWX scaling rules:
+        let pr_stdev: f32 = 0.01 * (2u32.pow(pr_n) as f32); // meters
+        let cp_stdev: f32 = 0.004 * (cp_n as f32); // cycles
+        let do_stdev: f32 = 0.002 * (2u32.pow(do_n) as f32); // Hz
+
+        let trk_stat: u8 = payload[offset + 30];
+
+        meas.push(UBXRawxMeas {
+            pr_mes,
+            cp_mes,
+            do_mes,
+            gnss_id,
+            sv_id,
+            sig_id,
+            freq_id,
+            lock_time,
+            cno,
+            pr_stdev,
+            cp_stdev,
+            do_stdev,
+            trk_stat,
+        });
+
+        offset += 32;
+    }
+
+    Ok(UBXRxmRawx {
+        rcv_tow,
+        week,
+        leap_s,
+        num_meas,
+        rec_stat,
+        version,
+        meas,
+    })
+}
+
+pub fn decode_ubx_rxm_sfrbx_msg(data: &[u8]) -> Result<UBXRxmSfrbx> {
+    compare_checksums(data)?;
+
+    let payload_length: usize = get_u16_from_le_byte_array(data, 4) as usize;
+    let payload: &[u8] = &data[6..6 + payload_length];
+
+    let gnss_id: u8 = payload[0];
+    let sv_id: u8 = payload[1];
+    let sig_id: u8 = payload[2];
+    let freq_id: u8 = payload[3];
+    let num_words: u8 = payload[4];
+    let chn: u8 = payload[5];
+    let version: u8 = payload[6];
+
+    let mut dwrd: Vec<u32> = Vec::new();
+    let mut offset: usize = 8;
+    for _ in 0..num_words {
+        if offset + 4 > payload.len() {
+            return Err(anyhow::anyhow!("sfrbx data words exceed payload"));
+        }
+        let w = get_u32_from_le_byte_array(payload, offset);
+        dwrd.push(w);
+        offset += 4;
+    }
+
+    Ok(UBXRxmSfrbx {
+        gnss_id,
+        sv_id,
+        sig_id,
+        freq_id,
+        num_words,
+        chn,
+        version,
+        dwrd,
     })
 }
 
