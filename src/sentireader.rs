@@ -89,6 +89,8 @@ impl SentiReader {
             .read_exact(buffer.as_mut_slice())
             .expect("Should have read two bytes here.");
 
+        self.has_onboard_timestamp = false;
+
         while buffer[0] as char != '^' || !(buffer[1] as char == 'B' || buffer[1] as char == 'C') {
             max_skip -= 1;
             if max_skip == 0 {
@@ -141,21 +143,27 @@ impl SentiReader {
 
         self.compare_header_checksum()?;
 
-        if self.has_onboard_timestamp {
-            sentiboard_msg.onboard_timestamp = Some(get_f64_from_byte_array(&self.serial_buf, 8));
-        }
-
         self.data_length = get_u16_from_byte_array(&self.serial_buf, 2);
         sentiboard_msg.sensor_id = Some(self.serial_buf[4]);
         self.protocol_version = self.serial_buf[5];
 
-        let mut package_buffer: Vec<u8> = vec![0; self.data_length as usize + CHECKSUM_SIZE];
+        // Read onboard timestamp from serial BEFORE reading the package body
+        if self.has_onboard_timestamp {
+            let mut ts_buf = [0u8; 8];
+            self.reader
+                .read_exact(&mut ts_buf)
+                .map_err(|e| format!("Failed to read onboard timestamp: {e}"))?;
+            sentiboard_msg.onboard_timestamp = Some(f64::from_ne_bytes(ts_buf));
+        }
 
-        // read the rest of the package and append it to serial buffer
-        self.reader
-            .read_exact(package_buffer.as_mut_slice())
-            .expect("Should have read a buffer of data_length + CHECKSUM_SIZE here.");
-        self.serial_buf.append(&mut package_buffer);
+        // Now read the rest of the package
+      let mut package_buffer: Vec<u8> = vec![0; self.data_length as usize + CHECKSUM_SIZE];
+      self.reader
+          .read_exact(package_buffer.as_mut_slice())
+          .map_err(|e| format!("Failed to read package buffer: {e}"))?;
+      self.serial_buf.append(&mut package_buffer);
+
+
 
         sentiboard_msg.time_of_validity = Some(get_u32_from_byte_array(
             &self.serial_buf,
@@ -170,16 +178,18 @@ impl SentiReader {
             SENTIBOARD_TOT_POS,
         ));
 
-        // self.sentiboard_data.resize(self.data_length as usize + HEADER_SIZE, 0);
-        // sentiboard_msg.sensor_data.resize(self.data_length as usize - TOV_LENGTH - TOA_LENGTH - TOT_LENGTH , 0);
-
+        // self.compare_data_checksum()?;
+        // Checksum BEFORE returning sensor_data
         self.sentiboard_data =
             self.serial_buf[HEADER_SIZE..(self.data_length as usize + HEADER_SIZE)].to_vec();
+        self.compare_data_checksum()?;   // ← moved up
 
-        sentiboard_msg.sensor_data =
-            Some(self.sentiboard_data[TOV_LENGTH + TOA_LENGTH + TOT_LENGTH..].to_vec());
-
-        self.compare_data_checksum()?;
+        let payload_start = TOV_LENGTH + TOA_LENGTH + TOT_LENGTH;
+        sentiboard_msg.sensor_data = if self.sentiboard_data.len() > payload_start {
+            Some(self.sentiboard_data[payload_start..].to_vec())
+        } else {
+            Some(vec![])
+        };
 
         Ok(sentiboard_msg)
     }
