@@ -6,6 +6,9 @@ use crate::utils::{
 use anyhow::Result;
 
 const HEADER_SIZE: usize = 6;
+const CHECKSUM_SIZE: usize = 2;
+const RAWX_HEADER_LENGTH: usize = 16;
+const RAWX_MEASUREMENT_LENGTH: usize = 32;
 
 #[derive(Debug)]
 pub struct UBXNavPvt {
@@ -635,30 +638,59 @@ pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Option<UBXNavSvIn> {
 }
 
 pub fn decode_ubx_rxm_rawx_msg(data: &[u8]) -> Result<UBXRxmRawx> {
-    compare_checksums(data)?;
+    anyhow::ensure!(
+        data.len() >= HEADER_SIZE + CHECKSUM_SIZE,
+        "ubx frame is shorter than its header and checksum"
+    );
 
     let payload_length: usize = get_u16_from_le_byte_array(data, 4) as usize;
-    let payload: &[u8] = &data[6..6 + payload_length];
+    let payload_end = HEADER_SIZE
+        .checked_add(payload_length)
+        .ok_or_else(|| anyhow::anyhow!("ubx payload length overflow"))?;
+    let frame_length = payload_end
+        .checked_add(CHECKSUM_SIZE)
+        .ok_or_else(|| anyhow::anyhow!("ubx frame length overflow"))?;
 
-    let rcv_tow: f64 = f64::from_le_bytes(payload[0..8].try_into().unwrap());
-    let week: u16 = get_u16_from_le_byte_array(payload, 8);
+    anyhow::ensure!(
+        data.len() >= frame_length,
+        "ubx frame is shorter than declared payload length"
+    );
+
+    let frame = &data[..frame_length];
+    compare_checksums(frame)?;
+
+    let payload: &[u8] = &frame[HEADER_SIZE..payload_end];
+    anyhow::ensure!(
+        payload.len() >= RAWX_HEADER_LENGTH,
+        "rawx payload is shorter than fixed header"
+    );
+
+    let rcv_tow: f64 = f64::from_le_bytes(payload[0..8].try_into()?);
+    let week: u16 = u16::from_le_bytes(payload[8..10].try_into()?);
     let leap_s: i8 = payload[10] as i8;
     let num_meas: u8 = payload[11];
     let rec_stat: u8 = payload[12];
     let version: u8 = payload[13];
+    let measurement_end = RAWX_HEADER_LENGTH
+        .checked_add(num_meas as usize * RAWX_MEASUREMENT_LENGTH)
+        .ok_or_else(|| anyhow::anyhow!("rawx measurement length overflow"))?;
+    anyhow::ensure!(
+        payload.len() >= measurement_end,
+        "rawx measurement blocks exceed payload length"
+    );
+
     let mut meas: Vec<UBXRawxMeas> = Vec::new();
-    let mut offset: usize = 16;
+    let mut offset: usize = RAWX_HEADER_LENGTH;
 
     for _ in 0..num_meas {
-        let pr_mes: f64 = f64::from_le_bytes(payload[offset..offset + 8].try_into().unwrap());
-        let cp_mes: f64 = f64::from_le_bytes(payload[offset + 8..offset + 16].try_into().unwrap());
-        let do_mes: f32 = f32::from_le_bytes(payload[offset + 16..offset + 20].try_into().unwrap());
+        let pr_mes: f64 = f64::from_le_bytes(payload[offset..offset + 8].try_into()?);
+        let cp_mes: f64 = f64::from_le_bytes(payload[offset + 8..offset + 16].try_into()?);
+        let do_mes: f32 = f32::from_le_bytes(payload[offset + 16..offset + 20].try_into()?);
         let gnss_id: u8 = payload[offset + 20];
         let sv_id: u8 = payload[offset + 21];
         let sig_id: u8 = payload[offset + 22];
         let freq_id: u8 = payload[offset + 23];
-        let lock_time: u16 =
-            u16::from_le_bytes(payload[offset + 24..offset + 26].try_into().unwrap());
+        let lock_time: u16 = u16::from_le_bytes(payload[offset + 24..offset + 26].try_into()?);
         let cno: u8 = payload[offset + 26];
 
         // Raw bytes:
@@ -694,7 +726,7 @@ pub fn decode_ubx_rxm_rawx_msg(data: &[u8]) -> Result<UBXRxmRawx> {
             trk_stat,
         });
 
-        offset += 32;
+        offset += RAWX_MEASUREMENT_LENGTH;
     }
 
     Ok(UBXRxmRawx {
@@ -762,6 +794,16 @@ fn compute_checksum(data: &Vec<u8>) -> (u8, u8) {
 mod tests {
     use super::*;
 
+    fn ubx_frame(msg_class: u8, msg_id: u8, payload: &[u8]) -> Vec<u8> {
+        let mut frame = vec![0xB5, 0x62, msg_class, msg_id];
+        frame.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        frame.extend_from_slice(payload);
+
+        let (ck_a, ck_b) = compute_checksum(&frame[2..].to_vec());
+        frame.extend_from_slice(&[ck_a, ck_b]);
+        frame
+    }
+
     // #[test]
     // fn test_compute_checksum() {
     //     let data = vec![0x01, 0x02, 0x03, 0x04, 0x05];
@@ -795,6 +837,42 @@ mod tests {
     fn test_get_message_type_handles_short_data() {
         assert_eq!(get_message_type(&[]), UbxMessageType::Unknown);
         assert_eq!(get_ubx_message_class(&[]), UBXMessageClass::Unknown);
+    }
+
+    #[test]
+    fn test_decode_rawx_rejects_payload_shorter_than_fixed_header() {
+        let frame = ubx_frame(0x02, 0x15, &[0; 8]);
+
+        let err = decode_ubx_rxm_rawx_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("rawx payload is shorter than fixed header"));
+    }
+
+    #[test]
+    fn test_decode_rawx_rejects_truncated_declared_frame() {
+        let mut frame = ubx_frame(0x02, 0x15, &[0; RAWX_HEADER_LENGTH]);
+        frame.pop();
+
+        let err = decode_ubx_rxm_rawx_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("ubx frame is shorter than declared payload length"));
+    }
+
+    #[test]
+    fn test_decode_rawx_rejects_missing_measurement_blocks() {
+        let mut payload = vec![0; RAWX_HEADER_LENGTH];
+        payload[11] = 1;
+        let frame = ubx_frame(0x02, 0x15, &payload);
+
+        let err = decode_ubx_rxm_rawx_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("rawx measurement blocks exceed payload length"));
     }
 
     #[test]
