@@ -441,12 +441,7 @@ mod tests {
             0, 255, 52, 121, 0, 39, 132, 64, 23, 20, 0, 217, 1, 244, 57, 44, 117, 39,
         ];
 
-        let imu_msg = match parse_stim300_data(&data) {
-            Ok(imu_msg) => imu_msg,
-            Err(e) => IMUMessage {
-                ..Default::default()
-            },
-        };
+        let imu_msg = parse_stim300_data(&data).expect("STIM300 test frame should parse");
 
         println!("imu_msg = {:?}", imu_msg);
 

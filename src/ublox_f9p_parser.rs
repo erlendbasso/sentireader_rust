@@ -6,6 +6,10 @@ use crate::utils::{
 use anyhow::Result;
 
 const HEADER_SIZE: usize = 6;
+const CHECKSUM_SIZE: usize = 2;
+const RAWX_HEADER_LENGTH: usize = 16;
+const RAWX_MEASUREMENT_LENGTH: usize = 32;
+const SFRBX_HEADER_LENGTH: usize = 8;
 
 #[derive(Debug)]
 pub struct UBXNavPvt {
@@ -153,16 +157,67 @@ pub struct UBXNavSvIn {
     pub reserved: u16,
 }
 
-pub enum NavMessageType {
+#[derive(Debug)]
+pub struct UBXRxmRawx {
+    pub rcv_tow: f64,
+    pub week: u16,
+    pub leap_s: i8,
+    pub num_meas: u8,
+    pub rec_stat: u8,
+    pub version: u8,
+    pub meas: Vec<UBXRawxMeas>,
+}
+
+#[derive(Debug)]
+pub struct UBXRxmSfrbx {
+    pub gnss_id: u8,
+    pub sv_id: u8,
+    pub sig_id: u8,
+    pub freq_id: u8,
+    pub num_words: u8,
+    pub chn: u8,
+    pub version: u8,
+    pub dwrd: Vec<u32>,
+}
+
+#[derive(Debug)]
+pub struct UBXRawxMeas {
+    pub pr_mes: f64,
+    pub cp_mes: f64,
+    pub do_mes: f32,
+    pub gnss_id: u8,
+    pub sv_id: u8,
+    pub sig_id: u8,
+    pub freq_id: u8,
+    pub lock_time: u16,
+    pub cno: u8,
+    pub pr_stdev: f32,
+    pub cp_stdev: f32,
+    pub do_stdev: f32,
+    pub trk_stat: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UbxMessageType {
     NavPvt,
     NavRelPosNed,
     NavHPPosECEF,
     NavCov,
     NavHPPosLLH,
     SvIn,
+    RxmRawx,
+    RxmSfrbx,
+    RxmMeasx,
+    RxmRtcm,
+    RxmSpartn,
+    RxmCor,
+    RxmPmreq,
     Unknown,
 }
 
+pub type NavMessageType = UbxMessageType;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UBXMessageClass {
     Nav,
     Receiver,
@@ -177,32 +232,65 @@ fn get_msg_class(msg_class: u8) -> UBXMessageClass {
     }
 }
 
-fn get_data_information(data_id: u8) -> NavMessageType {
+fn get_data_information(msg_class: UBXMessageClass, data_id: u8) -> UbxMessageType {
+    match msg_class {
+        UBXMessageClass::Nav => get_nav_message_type_from_id(data_id),
+        UBXMessageClass::Receiver => get_receiver_message_type_from_id(data_id),
+        UBXMessageClass::Unknown => UbxMessageType::Unknown,
+    }
+}
+
+fn get_nav_message_type_from_id(data_id: u8) -> UbxMessageType {
     match data_id {
-        7 => NavMessageType::NavPvt,
-        19 => NavMessageType::NavHPPosECEF,
-        20 => NavMessageType::NavHPPosLLH,
-        54 => NavMessageType::NavCov,
-        59 => NavMessageType::SvIn,
-        60 => NavMessageType::NavRelPosNed,
+        7 => UbxMessageType::NavPvt,
+        19 => UbxMessageType::NavHPPosECEF,
+        20 => UbxMessageType::NavHPPosLLH,
+        54 => UbxMessageType::NavCov,
+        59 => UbxMessageType::SvIn,
+        60 => UbxMessageType::NavRelPosNed,
         // _ => panic!("Unknown data id: {}", data_id),
-        _ => NavMessageType::Unknown,
+        _ => UbxMessageType::Unknown,
+    }
+}
+
+fn get_receiver_message_type_from_id(data_id: u8) -> UbxMessageType {
+    match data_id {
+        19 => UbxMessageType::RxmSfrbx,
+        20 => UbxMessageType::RxmMeasx,
+        21 => UbxMessageType::RxmRawx,
+        50 => UbxMessageType::RxmRtcm,
+        51 => UbxMessageType::RxmSpartn,
+        52 => UbxMessageType::RxmCor,
+        65 => UbxMessageType::RxmPmreq,
+        _ => UbxMessageType::Unknown,
     }
 }
 
 pub fn get_ubx_message_class(data: &[u8]) -> UBXMessageClass {
-    let msg_class = data[2];
-    get_msg_class(msg_class)
+    match data.get(2) {
+        Some(msg_class) => get_msg_class(*msg_class),
+        None => UBXMessageClass::Unknown,
+    }
 }
 
-pub fn get_message_type(data: &[u8]) -> NavMessageType {
-    let msg_class = get_msg_class(data[2]);
-    match msg_class {
-        UBXMessageClass::Nav => {
-            // println!("data_id: {}", data_id);
-            get_data_information(data[3])
-        }
-        _ => NavMessageType::Unknown,
+pub fn get_message_type(data: &[u8]) -> UbxMessageType {
+    let Some(data_id) = data.get(3) else {
+        return UbxMessageType::Unknown;
+    };
+
+    let msg_class = get_ubx_message_class(data);
+    get_data_information(msg_class, *data_id)
+}
+
+pub fn get_nav_message_type(data: &[u8]) -> UbxMessageType {
+    match get_message_type(data) {
+        msg_type @ (UbxMessageType::NavPvt
+        | UbxMessageType::NavRelPosNed
+        | UbxMessageType::NavHPPosECEF
+        | UbxMessageType::NavCov
+        | UbxMessageType::NavHPPosLLH
+        | UbxMessageType::SvIn) => msg_type,
+        _ => UbxMessageType::Unknown,
     }
 }
 
@@ -550,6 +638,151 @@ pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Option<UBXNavSvIn> {
     })
 }
 
+pub fn decode_ubx_rxm_rawx_msg(data: &[u8]) -> Result<UBXRxmRawx> {
+    let payload: &[u8] = checked_ubx_payload(data)?;
+    anyhow::ensure!(
+        payload.len() >= RAWX_HEADER_LENGTH,
+        "rawx payload is shorter than fixed header"
+    );
+
+    let rcv_tow: f64 = f64::from_le_bytes(payload[0..8].try_into()?);
+    let week: u16 = u16::from_le_bytes(payload[8..10].try_into()?);
+    let leap_s: i8 = payload[10] as i8;
+    let num_meas: u8 = payload[11];
+    let rec_stat: u8 = payload[12];
+    let version: u8 = payload[13];
+    let measurement_end = RAWX_HEADER_LENGTH
+        .checked_add(num_meas as usize * RAWX_MEASUREMENT_LENGTH)
+        .ok_or_else(|| anyhow::anyhow!("rawx measurement length overflow"))?;
+    anyhow::ensure!(
+        payload.len() >= measurement_end,
+        "rawx measurement blocks exceed payload length"
+    );
+
+    let mut meas: Vec<UBXRawxMeas> = Vec::new();
+    let mut offset: usize = RAWX_HEADER_LENGTH;
+
+    for _ in 0..num_meas {
+        let pr_mes: f64 = f64::from_le_bytes(payload[offset..offset + 8].try_into()?);
+        let cp_mes: f64 = f64::from_le_bytes(payload[offset + 8..offset + 16].try_into()?);
+        let do_mes: f32 = f32::from_le_bytes(payload[offset + 16..offset + 20].try_into()?);
+        let gnss_id: u8 = payload[offset + 20];
+        let sv_id: u8 = payload[offset + 21];
+        let sig_id: u8 = payload[offset + 22];
+        let freq_id: u8 = payload[offset + 23];
+        let lock_time: u16 = u16::from_le_bytes(payload[offset + 24..offset + 26].try_into()?);
+        let cno: u8 = payload[offset + 26];
+
+        // Raw bytes:
+        let pr_raw: u8 = payload[offset + 27];
+        let cp_raw: u8 = payload[offset + 28];
+        let do_raw: u8 = payload[offset + 29];
+
+        // Extract lower 4 bits (bits 3..0)
+        let pr_n: u32 = (pr_raw & 0x0F) as u32;
+        let cp_n: u32 = (cp_raw & 0x0F) as u32;
+        let do_n: u32 = (do_raw & 0x0F) as u32;
+
+        // Apply UBX RAWX scaling rules:
+        let pr_stdev: f32 = 0.01 * (2u32.pow(pr_n) as f32); // meters
+        let cp_stdev: f32 = 0.004 * (cp_n as f32); // cycles
+        let do_stdev: f32 = 0.002 * (2u32.pow(do_n) as f32); // Hz
+
+        let trk_stat: u8 = payload[offset + 30];
+
+        meas.push(UBXRawxMeas {
+            pr_mes,
+            cp_mes,
+            do_mes,
+            gnss_id,
+            sv_id,
+            sig_id,
+            freq_id,
+            lock_time,
+            cno,
+            pr_stdev,
+            cp_stdev,
+            do_stdev,
+            trk_stat,
+        });
+
+        offset += RAWX_MEASUREMENT_LENGTH;
+    }
+
+    Ok(UBXRxmRawx {
+        rcv_tow,
+        week,
+        leap_s,
+        num_meas,
+        rec_stat,
+        version,
+        meas,
+    })
+}
+
+fn checked_ubx_payload(data: &[u8]) -> Result<&[u8]> {
+    anyhow::ensure!(
+        data.len() >= HEADER_SIZE + CHECKSUM_SIZE,
+        "ubx frame is shorter than its header and checksum"
+    );
+
+    let payload_length: usize = get_u16_from_le_byte_array(data, 4) as usize;
+    let payload_end = HEADER_SIZE
+        .checked_add(payload_length)
+        .ok_or_else(|| anyhow::anyhow!("ubx payload length overflow"))?;
+    let frame_length = payload_end
+        .checked_add(CHECKSUM_SIZE)
+        .ok_or_else(|| anyhow::anyhow!("ubx frame length overflow"))?;
+
+    anyhow::ensure!(
+        data.len() >= frame_length,
+        "ubx frame is shorter than declared payload length"
+    );
+
+    let frame = &data[..frame_length];
+    compare_checksums(frame)?;
+
+    Ok(&frame[HEADER_SIZE..payload_end])
+}
+
+pub fn decode_ubx_rxm_sfrbx_msg(data: &[u8]) -> Result<UBXRxmSfrbx> {
+    let payload: &[u8] = checked_ubx_payload(data)?;
+    anyhow::ensure!(
+        payload.len() >= SFRBX_HEADER_LENGTH,
+        "sfrbx payload is shorter than fixed header"
+    );
+
+    let gnss_id: u8 = payload[0];
+    let sv_id: u8 = payload[1];
+    let sig_id: u8 = payload[2];
+    let freq_id: u8 = payload[3];
+    let num_words: u8 = payload[4];
+    let chn: u8 = payload[5];
+    let version: u8 = payload[6];
+
+    let mut dwrd: Vec<u32> = Vec::new();
+    let mut offset: usize = 8;
+    for _ in 0..num_words {
+        if offset + 4 > payload.len() {
+            return Err(anyhow::anyhow!("sfrbx data words exceed payload"));
+        }
+        let w = get_u32_from_le_byte_array(payload, offset);
+        dwrd.push(w);
+        offset += 4;
+    }
+
+    Ok(UBXRxmSfrbx {
+        gnss_id,
+        sv_id,
+        sig_id,
+        freq_id,
+        num_words,
+        chn,
+        version,
+        dwrd,
+    })
+}
+
 /// 8 bit Fletcher checksum algorithm
 fn compute_checksum(data: &Vec<u8>) -> (u8, u8) {
     let mut ck_a: u8 = 0;
@@ -567,6 +800,16 @@ fn compute_checksum(data: &Vec<u8>) -> (u8, u8) {
 mod tests {
     use super::*;
 
+    fn ubx_frame(msg_class: u8, msg_id: u8, payload: &[u8]) -> Vec<u8> {
+        let mut frame = vec![0xB5, 0x62, msg_class, msg_id];
+        frame.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        frame.extend_from_slice(payload);
+
+        let (ck_a, ck_b) = compute_checksum(&frame[2..].to_vec());
+        frame.extend_from_slice(&[ck_a, ck_b]);
+        frame
+    }
+
     // #[test]
     // fn test_compute_checksum() {
     //     let data = vec![0x01, 0x02, 0x03, 0x04, 0x05];
@@ -574,6 +817,101 @@ mod tests {
     //     assert_eq!(ck_a, 0x0f);
     //     assert_eq!(ck_b, 0x14);
     // }
+
+    #[test]
+    fn test_get_message_type_uses_class_scoped_message_id() {
+        let nav_hpposecef_msg = [0xB5, 0x62, 0x01, 0x13];
+        let rxm_sfrbx_msg = [0xB5, 0x62, 0x02, 0x13];
+
+        assert_eq!(
+            get_message_type(&nav_hpposecef_msg),
+            UbxMessageType::NavHPPosECEF
+        );
+        assert_eq!(get_message_type(&rxm_sfrbx_msg), UbxMessageType::RxmSfrbx);
+    }
+
+    #[test]
+    fn test_get_message_type_detects_receiver_messages() {
+        let rxm_rawx_msg = [0xB5, 0x62, 0x02, 0x15];
+        let rxm_rtcm_msg = [0xB5, 0x62, 0x02, 0x32];
+
+        assert_eq!(get_message_type(&rxm_rawx_msg), UbxMessageType::RxmRawx);
+        assert_eq!(get_message_type(&rxm_rtcm_msg), UbxMessageType::RxmRtcm);
+    }
+
+    #[test]
+    fn test_get_message_type_handles_short_data() {
+        assert_eq!(get_message_type(&[]), UbxMessageType::Unknown);
+        assert_eq!(get_ubx_message_class(&[]), UBXMessageClass::Unknown);
+    }
+
+    #[test]
+    fn test_decode_rawx_rejects_payload_shorter_than_fixed_header() {
+        let frame = ubx_frame(0x02, 0x15, &[0; 8]);
+
+        let err = decode_ubx_rxm_rawx_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("rawx payload is shorter than fixed header"));
+    }
+
+    #[test]
+    fn test_decode_rawx_rejects_truncated_declared_frame() {
+        let mut frame = ubx_frame(0x02, 0x15, &[0; RAWX_HEADER_LENGTH]);
+        frame.pop();
+
+        let err = decode_ubx_rxm_rawx_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("ubx frame is shorter than declared payload length"));
+    }
+
+    #[test]
+    fn test_decode_rawx_rejects_missing_measurement_blocks() {
+        let mut payload = vec![0; RAWX_HEADER_LENGTH];
+        payload[11] = 1;
+        let frame = ubx_frame(0x02, 0x15, &payload);
+
+        let err = decode_ubx_rxm_rawx_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("rawx measurement blocks exceed payload length"));
+    }
+
+    #[test]
+    fn test_decode_sfrbx_rejects_frame_shorter_than_header() {
+        let err = decode_ubx_rxm_sfrbx_msg(&[0xB5, 0x62]).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("ubx frame is shorter than its header and checksum"));
+    }
+
+    #[test]
+    fn test_decode_sfrbx_rejects_truncated_declared_frame() {
+        let mut frame = ubx_frame(0x02, 0x13, &[0; SFRBX_HEADER_LENGTH]);
+        frame.pop();
+
+        let err = decode_ubx_rxm_sfrbx_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("ubx frame is shorter than declared payload length"));
+    }
+
+    #[test]
+    fn test_decode_sfrbx_rejects_payload_shorter_than_fixed_header() {
+        let frame = ubx_frame(0x02, 0x13, &[0; 4]);
+
+        let err = decode_ubx_rxm_sfrbx_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("sfrbx payload is shorter than fixed header"));
+    }
 
     #[test]
     fn test_parse_ubx_nav_cov_message() {
