@@ -9,6 +9,7 @@ const HEADER_SIZE: usize = 6;
 const CHECKSUM_SIZE: usize = 2;
 const RAWX_HEADER_LENGTH: usize = 16;
 const RAWX_MEASUREMENT_LENGTH: usize = 32;
+const SFRBX_HEADER_LENGTH: usize = 8;
 
 #[derive(Debug)]
 pub struct UBXNavPvt {
@@ -638,28 +639,7 @@ pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Option<UBXNavSvIn> {
 }
 
 pub fn decode_ubx_rxm_rawx_msg(data: &[u8]) -> Result<UBXRxmRawx> {
-    anyhow::ensure!(
-        data.len() >= HEADER_SIZE + CHECKSUM_SIZE,
-        "ubx frame is shorter than its header and checksum"
-    );
-
-    let payload_length: usize = get_u16_from_le_byte_array(data, 4) as usize;
-    let payload_end = HEADER_SIZE
-        .checked_add(payload_length)
-        .ok_or_else(|| anyhow::anyhow!("ubx payload length overflow"))?;
-    let frame_length = payload_end
-        .checked_add(CHECKSUM_SIZE)
-        .ok_or_else(|| anyhow::anyhow!("ubx frame length overflow"))?;
-
-    anyhow::ensure!(
-        data.len() >= frame_length,
-        "ubx frame is shorter than declared payload length"
-    );
-
-    let frame = &data[..frame_length];
-    compare_checksums(frame)?;
-
-    let payload: &[u8] = &frame[HEADER_SIZE..payload_end];
+    let payload: &[u8] = checked_ubx_payload(data)?;
     anyhow::ensure!(
         payload.len() >= RAWX_HEADER_LENGTH,
         "rawx payload is shorter than fixed header"
@@ -740,11 +720,37 @@ pub fn decode_ubx_rxm_rawx_msg(data: &[u8]) -> Result<UBXRxmRawx> {
     })
 }
 
-pub fn decode_ubx_rxm_sfrbx_msg(data: &[u8]) -> Result<UBXRxmSfrbx> {
-    compare_checksums(data)?;
+fn checked_ubx_payload(data: &[u8]) -> Result<&[u8]> {
+    anyhow::ensure!(
+        data.len() >= HEADER_SIZE + CHECKSUM_SIZE,
+        "ubx frame is shorter than its header and checksum"
+    );
 
     let payload_length: usize = get_u16_from_le_byte_array(data, 4) as usize;
-    let payload: &[u8] = &data[6..6 + payload_length];
+    let payload_end = HEADER_SIZE
+        .checked_add(payload_length)
+        .ok_or_else(|| anyhow::anyhow!("ubx payload length overflow"))?;
+    let frame_length = payload_end
+        .checked_add(CHECKSUM_SIZE)
+        .ok_or_else(|| anyhow::anyhow!("ubx frame length overflow"))?;
+
+    anyhow::ensure!(
+        data.len() >= frame_length,
+        "ubx frame is shorter than declared payload length"
+    );
+
+    let frame = &data[..frame_length];
+    compare_checksums(frame)?;
+
+    Ok(&frame[HEADER_SIZE..payload_end])
+}
+
+pub fn decode_ubx_rxm_sfrbx_msg(data: &[u8]) -> Result<UBXRxmSfrbx> {
+    let payload: &[u8] = checked_ubx_payload(data)?;
+    anyhow::ensure!(
+        payload.len() >= SFRBX_HEADER_LENGTH,
+        "sfrbx payload is shorter than fixed header"
+    );
 
     let gnss_id: u8 = payload[0];
     let sv_id: u8 = payload[1];
@@ -873,6 +879,38 @@ mod tests {
         assert!(err
             .to_string()
             .contains("rawx measurement blocks exceed payload length"));
+    }
+
+    #[test]
+    fn test_decode_sfrbx_rejects_frame_shorter_than_header() {
+        let err = decode_ubx_rxm_sfrbx_msg(&[0xB5, 0x62]).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("ubx frame is shorter than its header and checksum"));
+    }
+
+    #[test]
+    fn test_decode_sfrbx_rejects_truncated_declared_frame() {
+        let mut frame = ubx_frame(0x02, 0x13, &[0; SFRBX_HEADER_LENGTH]);
+        frame.pop();
+
+        let err = decode_ubx_rxm_sfrbx_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("ubx frame is shorter than declared payload length"));
+    }
+
+    #[test]
+    fn test_decode_sfrbx_rejects_payload_shorter_than_fixed_header() {
+        let frame = ubx_frame(0x02, 0x13, &[0; 4]);
+
+        let err = decode_ubx_rxm_sfrbx_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("sfrbx payload is shorter than fixed header"));
     }
 
     #[test]
