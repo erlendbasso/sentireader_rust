@@ -10,6 +10,12 @@ const CHECKSUM_SIZE: usize = 2;
 const RAWX_HEADER_LENGTH: usize = 16;
 const RAWX_MEASUREMENT_LENGTH: usize = 32;
 const SFRBX_HEADER_LENGTH: usize = 8;
+const NAV_HPPOSECEF_LENGTH: usize = 28;
+const NAV_HPPOSLLH_LENGTH: usize = 36;
+const NAV_PVT_LENGTH: usize = 92;
+const NAV_RELPOSNED_LENGTH: usize = 64;
+const NAV_COV_LENGTH: usize = 64;
+const NAV_SVIN_LENGTH: usize = 40;
 
 #[derive(Debug)]
 pub struct UBXNavPvt {
@@ -36,9 +42,9 @@ pub struct UBXNavPvt {
     pub confirmed_date: bool,
     pub confirmed_time: bool,
     pub num_sv: u8,
-    pub lon: f32,
-    pub lat: f32,
-    pub height: f32,
+    pub lon: f64,
+    pub lat: f64,
+    pub height: f64,
     pub h_msl: f32,
     pub h_acc: f32,
     pub v_acc: f32,
@@ -309,17 +315,9 @@ fn compare_checksums(data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub fn decode_ubx_nav_hpposecef_msg(data: &[u8]) -> Option<UBXNavHPPosECEF> {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-    // println!("Payload length: {}", payload_length);
-    // if payload_length != 28 {
-    //     println!("invalid payload length");
-    //     return None; // Not enough data
-    // }
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_hpposecef_msg(data: &[u8]) -> Result<UBXNavHPPosECEF> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_HPPOSECEF_LENGTH, "nav-hpposecef")?;
 
     let version = payload[0];
     let itow = get_u32_from_le_byte_array(payload, 4);
@@ -333,7 +331,7 @@ pub fn decode_ubx_nav_hpposecef_msg(data: &[u8]) -> Option<UBXNavHPPosECEF> {
     let invalid_ecef = payload[23];
     let p_acc = get_u32_from_le_byte_array(payload, 24);
 
-    Some(UBXNavHPPosECEF {
+    Ok(UBXNavHPPosECEF {
         version,
         itow,
         ecef_x,
@@ -347,12 +345,9 @@ pub fn decode_ubx_nav_hpposecef_msg(data: &[u8]) -> Option<UBXNavHPPosECEF> {
     })
 }
 
-pub fn decode_ubx_nav_hpposllh_msg(data: &[u8]) -> UBXNavHPPosLLH {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_hpposllh_msg(data: &[u8]) -> Result<UBXNavHPPosLLH> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_HPPOSLLH_LENGTH, "nav-hpposllh")?;
 
     let version = payload[0];
     let invalid_llh = payload[1];
@@ -368,7 +363,7 @@ pub fn decode_ubx_nav_hpposllh_msg(data: &[u8]) -> UBXNavHPPosLLH {
     let h_acc = get_u32_from_le_byte_array(payload, 28);
     let v_acc = get_u32_from_le_byte_array(payload, 32);
 
-    UBXNavHPPosLLH {
+    Ok(UBXNavHPPosLLH {
         version,
         invalid_llh,
         itow,
@@ -382,15 +377,12 @@ pub fn decode_ubx_nav_hpposllh_msg(data: &[u8]) -> UBXNavHPPosLLH {
         h_msl_hp,
         h_acc,
         v_acc,
-    }
+    })
 }
 
-pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> UBXNavPvt {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> Result<UBXNavPvt> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_PVT_LENGTH, "nav-pvt")?;
 
     let itow = get_u32_from_le_byte_array(payload, 0);
     let year = get_u16_from_le_byte_array(payload, 4);
@@ -421,9 +413,9 @@ pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> UBXNavPvt {
     let confirmed_time = (flags2 >> 7) & 1;
 
     let num_sv = payload[23];
-    let lon = (get_i32_from_le_byte_array(payload, 24) as f32) * 1e-7;
-    let lat = (get_i32_from_le_byte_array(payload, 28) as f32) * 1e-7;
-    let height = get_i32_from_le_byte_array(payload, 32) as f32 * 1e-3;
+    let lon = (get_i32_from_le_byte_array(payload, 24) as f64) * 1e-7;
+    let lat = (get_i32_from_le_byte_array(payload, 28) as f64) * 1e-7;
+    let height = get_i32_from_le_byte_array(payload, 32) as f64 * 1e-3;
     let h_msl = get_i32_from_le_byte_array(payload, 36) as f32 * 1e-3;
     let h_acc = get_u32_from_le_byte_array(payload, 40) as f32 * 1e-3;
     let v_acc = get_u32_from_le_byte_array(payload, 44) as f32 * 1e-3;
@@ -443,7 +435,7 @@ pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> UBXNavPvt {
     let mag_dec = get_i16_from_le_byte_array(payload, 88) as f32 * 1e-2;
     let mag_acc = get_u16_from_le_byte_array(payload, 90) as f32 * 1e-2;
 
-    UBXNavPvt {
+    Ok(UBXNavPvt {
         itow,
         year,
         month,
@@ -486,15 +478,12 @@ pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> UBXNavPvt {
         head_veh,
         mag_dec,
         mag_acc,
-    }
+    })
 }
 
-pub fn decode_ubx_nav_relposned(data: &[u8]) -> UBXNavRelPosNed {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_relposned(data: &[u8]) -> Result<UBXNavRelPosNed> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_RELPOSNED_LENGTH, "nav-relposned")?;
 
     let version = payload[0];
     let ref_station_id = get_u16_from_le_byte_array(payload, 2);
@@ -524,7 +513,7 @@ pub fn decode_ubx_nav_relposned(data: &[u8]) -> UBXNavRelPosNed {
     let rel_pos_heading_valid = flags[1] & 1;
     let rel_pos_normalized = (flags[1] >> 1) & 1;
 
-    UBXNavRelPosNed {
+    Ok(UBXNavRelPosNed {
         version,
         ref_station_id,
         itow,
@@ -551,15 +540,12 @@ pub fn decode_ubx_nav_relposned(data: &[u8]) -> UBXNavRelPosNed {
         ref_obs_miss: ref_obs_miss == 1,
         rel_pos_heading_valid: rel_pos_heading_valid == 1,
         rel_pos_normalized: rel_pos_normalized == 1,
-    }
+    })
 }
 
-pub fn decode_ubx_nav_cov_msg(data: &[u8]) -> Option<UBXNavCov> {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_cov_msg(data: &[u8]) -> Result<UBXNavCov> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_COV_LENGTH, "nav-cov")?;
 
     let itow = get_u32_from_le_byte_array(payload, 0);
     let version = payload[4];
@@ -578,7 +564,7 @@ pub fn decode_ubx_nav_cov_msg(data: &[u8]) -> Option<UBXNavCov> {
     let vel_cov_ed = get_f32_from_le_byte_array(payload, 56) as f32;
     let vel_cov_dd = get_f32_from_le_byte_array(payload, 60) as f32;
 
-    Some(UBXNavCov {
+    Ok(UBXNavCov {
         itow,
         version,
         pos_cov_valid,
@@ -598,12 +584,9 @@ pub fn decode_ubx_nav_cov_msg(data: &[u8]) -> Option<UBXNavCov> {
     })
 }
 
-pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Option<UBXNavSvIn> {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Result<UBXNavSvIn> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_SVIN_LENGTH, "nav-svin")?;
 
     let version = payload[0];
     let itow = get_u32_from_le_byte_array(payload, 4);
@@ -620,7 +603,7 @@ pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Option<UBXNavSvIn> {
     let active = payload[37];
     let reserved = get_u16_from_le_byte_array(payload, 38);
 
-    Some(UBXNavSvIn {
+    Ok(UBXNavSvIn {
         version,
         itow,
         dur,
@@ -745,6 +728,14 @@ fn checked_ubx_payload(data: &[u8]) -> Result<&[u8]> {
     Ok(&frame[HEADER_SIZE..payload_end])
 }
 
+fn ensure_payload_len(payload: &[u8], minimum_len: usize, message_name: &str) -> Result<()> {
+    anyhow::ensure!(
+        payload.len() >= minimum_len,
+        "{message_name} payload is shorter than {minimum_len} bytes"
+    );
+    Ok(())
+}
+
 pub fn decode_ubx_rxm_sfrbx_msg(data: &[u8]) -> Result<UBXRxmSfrbx> {
     let payload: &[u8] = checked_ubx_payload(data)?;
     anyhow::ensure!(
@@ -808,6 +799,21 @@ mod tests {
         let (ck_a, ck_b) = compute_checksum(&frame[2..].to_vec());
         frame.extend_from_slice(&[ck_a, ck_b]);
         frame
+    }
+
+    fn nav_pvt_payload() -> Vec<u8> {
+        let mut payload = vec![0; NAV_PVT_LENGTH];
+        payload[4..6].copy_from_slice(&2026_u16.to_le_bytes());
+        payload[6] = 6;
+        payload[7] = 6;
+        payload[8] = 12;
+        payload[9] = 0;
+        payload[10] = 0;
+        payload[11] = 0b0000_0111;
+        payload[24..28].copy_from_slice(&123_456_789_i32.to_le_bytes());
+        payload[28..32].copy_from_slice(&(-456_789_123_i32).to_le_bytes());
+        payload[32..36].copy_from_slice(&123_456_789_i32.to_le_bytes());
+        payload
     }
 
     // #[test]
@@ -914,6 +920,40 @@ mod tests {
     }
 
     #[test]
+    fn test_decode_nav_pvt_rejects_truncated_declared_frame() {
+        let mut frame = ubx_frame(0x01, 0x07, &nav_pvt_payload());
+        frame.pop();
+
+        let err = decode_ubx_nav_pvt_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("ubx frame is shorter than declared payload length"));
+    }
+
+    #[test]
+    fn test_decode_nav_pvt_rejects_payload_shorter_than_fixed_length() {
+        let frame = ubx_frame(0x01, 0x07, &[0; 8]);
+
+        let err = decode_ubx_nav_pvt_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("nav-pvt payload is shorter than 92 bytes"));
+    }
+
+    #[test]
+    fn test_decode_nav_pvt_preserves_f64_position_precision() {
+        let frame = ubx_frame(0x01, 0x07, &nav_pvt_payload());
+
+        let nav_pvt = decode_ubx_nav_pvt_msg(&frame).unwrap();
+
+        assert!((nav_pvt.lon - 12.3456789).abs() < 1e-12);
+        assert!((nav_pvt.lat - -45.6789123).abs() < 1e-12);
+        assert!((nav_pvt.height - 123_456.789).abs() < 1e-9);
+    }
+
+    #[test]
     fn test_parse_ubx_nav_cov_message() {
         let message_bytes: Vec<u8> = vec![
             // UBX header
@@ -949,16 +989,10 @@ mod tests {
             compute_checksum(&message_bytes[2..HEADER_SIZE + 64].to_vec())
         );
 
-        let parsed_message = decode_ubx_nav_cov_msg(&message_bytes);
-
-        match parsed_message {
-            Some(nav_cov) => {
-                println!("{:?}", nav_cov);
-                // assert_eq!(nav_cov.itow, 305419896);
-                assert_eq!(nav_cov.version, 0);
-                // ... assert other fields as needed
-            }
-            _ => panic!("Unexpected message type"),
-        }
+        let nav_cov = decode_ubx_nav_cov_msg(&message_bytes).unwrap();
+        println!("{:?}", nav_cov);
+        // assert_eq!(nav_cov.itow, 305419896);
+        assert_eq!(nav_cov.version, 0);
+        // ... assert other fields as needed
     }
 }
