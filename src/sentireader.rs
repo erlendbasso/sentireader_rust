@@ -1,6 +1,8 @@
+use crate::logging_reader::LoggingReader;
 use crate::utils::*;
 use std::error;
 use std::io::Read;
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
@@ -49,6 +51,22 @@ impl SentiReader {
             .expect("Port should have opened.");
 
         Self::from_reader(port)
+    }
+
+    pub fn new_with_session_log<P>(
+        port_name: impl Into<String>,
+        baud_rate: u32,
+        log_dir: Option<P>,
+    ) -> SentiReader
+    where
+        P: AsRef<Path>,
+    {
+        let port = serialport::new(port_name.into(), baud_rate)
+            .timeout(Duration::from_secs_f32(1000.0))
+            .open()
+            .expect("Port should have opened.");
+
+        Self::from_reader(LoggingReader::new_session_log(port, log_dir))
     }
 
     pub fn from_reader<R>(reader: R) -> SentiReader
