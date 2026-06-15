@@ -1,6 +1,8 @@
+use crate::logging_reader::LoggingReader;
 use crate::utils::*;
 use std::error;
 use std::io::Read;
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
@@ -33,7 +35,7 @@ pub struct SentiboardMessage {
 }
 
 pub struct SentiReader {
-    reader: Box<dyn serialport::SerialPort>,
+    reader: Box<dyn Read + Send>,
     serial_buf: Vec<u8>,
     data_length: u16,
     sentiboard_data: Vec<u8>,
@@ -48,8 +50,31 @@ impl SentiReader {
             .open()
             .expect("Port should have opened.");
 
+        Self::from_reader(port)
+    }
+
+    pub fn new_with_session_log<P>(
+        port_name: impl Into<String>,
+        baud_rate: u32,
+        log_dir: Option<P>,
+    ) -> SentiReader
+    where
+        P: AsRef<Path>,
+    {
+        let port = serialport::new(port_name.into(), baud_rate)
+            .timeout(Duration::from_secs_f32(1000.0))
+            .open()
+            .expect("Port should have opened.");
+
+        Self::from_reader(LoggingReader::new_session_log(port, log_dir))
+    }
+
+    pub fn from_reader<R>(reader: R) -> SentiReader
+    where
+        R: Read + Send + 'static,
+    {
         Self {
-            reader: port,
+            reader: Box::new(reader),
             serial_buf: vec![0; BUF_SIZE],
             data_length: 0,
             protocol_version: 0,
@@ -224,6 +249,7 @@ fn compare_checksum(data: &[u8], received_checksum: u16) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
 
     fn test_packet_payload(has_onboard_timestamp: bool) -> (Vec<u8>, usize) {
         let mut serial_buf = vec![0; HEADER_SIZE];
@@ -239,6 +265,33 @@ mod tests {
 
         let data_length = serial_buf.len() - HEADER_SIZE;
         (serial_buf, data_length)
+    }
+
+    fn sentiboard_frame(has_onboard_timestamp: bool, sensor_data: &[u8]) -> Vec<u8> {
+        let mut payload = Vec::new();
+        if has_onboard_timestamp {
+            payload.extend_from_slice(&123.5_f64.to_ne_bytes());
+        }
+        payload.extend_from_slice(&11_u32.to_ne_bytes());
+        payload.extend_from_slice(&22_u32.to_ne_bytes());
+        payload.extend_from_slice(&33_u32.to_ne_bytes());
+        payload.extend_from_slice(sensor_data);
+
+        let mut header = vec![b'^', b'B'];
+        header.extend_from_slice(&(payload.len() as u16).to_ne_bytes());
+        header.push(7);
+        header.push(1);
+        let header_checksum = fletcher16(&header);
+        header.extend_from_slice(&header_checksum.to_ne_bytes());
+
+        let mut frame = header;
+        if has_onboard_timestamp {
+            frame[1] = b'C';
+        }
+        frame.extend_from_slice(&payload);
+        let data_checksum = fletcher16(&payload);
+        frame.extend_from_slice(&data_checksum.to_ne_bytes());
+        frame
     }
 
     #[test]
@@ -275,6 +328,48 @@ mod tests {
         let payload = parse_sentiboard_payload(&serial_buf, ONBOARD_TIMESTAMP_LENGTH, true);
 
         assert!(payload.is_err());
+    }
+
+    #[test]
+    fn read_package_from_reader_parses_valid_packet() {
+        let frame = sentiboard_frame(false, b"sensor");
+        let mut sentireader = SentiReader::from_reader(Cursor::new(frame));
+
+        let message = sentireader.read_package().unwrap();
+
+        assert_eq!(message.sensor_id, Some(7));
+        assert_eq!(message.time_of_validity, Some(11));
+        assert_eq!(message.time_of_arrival, Some(22));
+        assert_eq!(message.time_of_transport, Some(33));
+        assert_eq!(message.onboard_timestamp, None);
+        assert_eq!(message.sensor_data.as_deref(), Some(&b"sensor"[..]));
+        assert!(message.host_receive_time.is_some());
+    }
+
+    #[test]
+    fn read_package_from_reader_parses_timestamped_payload() {
+        let frame = sentiboard_frame(true, b"sensor");
+        let mut sentireader = SentiReader::from_reader(Cursor::new(frame));
+
+        let message = sentireader.read_package().unwrap();
+
+        assert_eq!(message.onboard_timestamp, Some(123.5));
+        assert_eq!(message.time_of_validity, Some(11));
+        assert_eq!(message.time_of_arrival, Some(22));
+        assert_eq!(message.time_of_transport, Some(33));
+        assert_eq!(message.sensor_data.as_deref(), Some(&b"sensor"[..]));
+    }
+
+    #[test]
+    fn read_package_from_reader_rejects_bad_data_checksum() {
+        let mut frame = sentiboard_frame(false, b"sensor");
+        let last = frame.len() - 1;
+        frame[last] ^= 0x01;
+        let mut sentireader = SentiReader::from_reader(Cursor::new(frame));
+
+        let message = sentireader.read_package();
+
+        assert!(message.is_err());
     }
 
     // #[test]

@@ -10,6 +10,26 @@ const CHECKSUM_SIZE: usize = 2;
 const RAWX_HEADER_LENGTH: usize = 16;
 const RAWX_MEASUREMENT_LENGTH: usize = 32;
 const SFRBX_HEADER_LENGTH: usize = 8;
+const NAV_HPPOSECEF_LENGTH: usize = 28;
+const NAV_HPPOSLLH_LENGTH: usize = 36;
+const NAV_PVT_LENGTH: usize = 92;
+const NAV_RELPOSNED_LENGTH: usize = 64;
+const NAV_COV_LENGTH: usize = 64;
+const NAV_SVIN_LENGTH: usize = 40;
+const NAV_STATUS_LENGTH: usize = 16;
+const NAV_TIMEUTC_LENGTH: usize = 20;
+const NAV_PL_LENGTH: usize = 52;
+const NAV_SBAS_HEADER_LENGTH: usize = 12;
+const NAV_SBAS_SV_LENGTH: usize = 12;
+const MON_HW3_HEADER_LENGTH: usize = 12;
+const MON_HW3_PIN_LENGTH: usize = 4;
+const MON_RF_HEADER_LENGTH: usize = 4;
+const MON_RF_BLOCK_LENGTH: usize = 24;
+const MON_SPAN_HEADER_LENGTH: usize = 4;
+const MON_SPAN_BLOCK_LENGTH: usize = 272;
+const SEC_SIG_LENGTH: usize = 12;
+const SEC_SIGLOG_HEADER_LENGTH: usize = 8;
+const SEC_SIGLOG_EVENT_LENGTH: usize = 8;
 
 #[derive(Debug)]
 pub struct UBXNavPvt {
@@ -36,9 +56,9 @@ pub struct UBXNavPvt {
     pub confirmed_date: bool,
     pub confirmed_time: bool,
     pub num_sv: u8,
-    pub lon: f32,
-    pub lat: f32,
-    pub height: f32,
+    pub lon: f64,
+    pub lat: f64,
+    pub height: f64,
     pub h_msl: f32,
     pub h_acc: f32,
     pub v_acc: f32,
@@ -158,6 +178,78 @@ pub struct UBXNavSvIn {
 }
 
 #[derive(Debug)]
+pub struct UBXNavStatus {
+    pub itow: u32,
+    pub gps_fix: u8,
+    pub flags: u8,
+    pub fix_stat: u8,
+    pub flags2: u8,
+    pub ttff: u32,
+    pub msss: u32,
+}
+
+#[derive(Debug)]
+pub struct UBXNavTimeUtc {
+    pub itow: u32,
+    pub t_acc: u32,
+    pub nano: i32,
+    pub year: u16,
+    pub month: u8,
+    pub day: u8,
+    pub hour: u8,
+    pub min: u8,
+    pub sec: u8,
+    pub valid: u8,
+}
+
+#[derive(Debug)]
+pub struct UBXNavPl {
+    pub msg_version: u8,
+    pub tmir_coeff: u8,
+    pub tmir_exp: i8,
+    pub pl_pos_valid: u8,
+    pub pl_pos_frame: u8,
+    pub pl_vel_valid: u8,
+    pub pl_vel_frame: u8,
+    pub pl_time_valid: u8,
+    pub pl_pos_invalidity_reason: u8,
+    pub pl_vel_invalidity_reason: u8,
+    pub pl_time_invalidity_reason: u8,
+    pub itow: u32,
+    pub pl_pos1: u32,
+    pub pl_pos2: u32,
+    pub pl_pos3: u32,
+    pub pl_vel1: u32,
+    pub pl_vel2: u32,
+    pub pl_vel3: u32,
+    pub pl_pos_horiz_orient: u16,
+    pub pl_vel_horiz_orient: u16,
+    pub pl_time: u32,
+}
+
+#[derive(Debug)]
+pub struct UBXNavSbasSv {
+    pub svid: u8,
+    pub udre: u8,
+    pub sv_sys: u8,
+    pub sv_service: u8,
+    pub prc: i16,
+    pub ic: i16,
+}
+
+#[derive(Debug)]
+pub struct UBXNavSbas {
+    pub itow: u32,
+    pub geo: u8,
+    pub mode: u8,
+    pub sys: i8,
+    pub service: u8,
+    pub cnt: u8,
+    pub status_flags: u8,
+    pub svs: Vec<UBXNavSbasSv>,
+}
+
+#[derive(Debug)]
 pub struct UBXRxmRawx {
     pub rcv_tow: f64,
     pub week: u16,
@@ -165,7 +257,7 @@ pub struct UBXRxmRawx {
     pub num_meas: u8,
     pub rec_stat: u8,
     pub version: u8,
-    pub meas: Vec<UBXRawxMeas>,
+    pub measurements: Vec<UBXRxmRawxMeas>,
 }
 
 #[derive(Debug)]
@@ -181,7 +273,7 @@ pub struct UBXRxmSfrbx {
 }
 
 #[derive(Debug)]
-pub struct UBXRawxMeas {
+pub struct UBXRxmRawxMeas {
     pub pr_mes: f64,
     pub cp_mes: f64,
     pub do_mes: f32,
@@ -189,12 +281,90 @@ pub struct UBXRawxMeas {
     pub sv_id: u8,
     pub sig_id: u8,
     pub freq_id: u8,
-    pub lock_time: u16,
+    pub locktime: u16,
     pub cno: u8,
-    pub pr_stdev: f32,
-    pub cp_stdev: f32,
-    pub do_stdev: f32,
+    pub pr_stdev: u8,
+    pub cp_stdev: u8,
+    pub do_stdev: u8,
     pub trk_stat: u8,
+}
+
+pub type UBXRawxMeas = UBXRxmRawxMeas;
+
+#[derive(Debug)]
+pub struct UBXMonHw3Pin {
+    pub pin_id: u8,
+    pub pin_mask: u16,
+    pub vp: u8,
+}
+
+#[derive(Debug)]
+pub struct UBXMonHw3 {
+    pub version: u8,
+    pub n_pins: u8,
+    pub flags: u8,
+    pub hw_version: String,
+    pub pins: Vec<UBXMonHw3Pin>,
+}
+
+#[derive(Debug)]
+pub struct UBXMonRfBlock {
+    pub block_id: u8,
+    pub flags: u8,
+    pub ant_status: u8,
+    pub ant_power: u8,
+    pub post_status: u32,
+    pub noise_per_ms: u16,
+    pub agc_cnt: u16,
+    pub cw_suppression: u8,
+    pub ofs_i: i8,
+    pub mag_i: u8,
+    pub ofs_q: i8,
+    pub mag_q: u8,
+}
+
+#[derive(Debug)]
+pub struct UBXMonRf {
+    pub version: u8,
+    pub n_blocks: u8,
+    pub blocks: Vec<UBXMonRfBlock>,
+}
+
+#[derive(Debug)]
+pub struct UBXMonSpanBlock {
+    pub spectrum: Vec<u8>,
+    pub span: u32,
+    pub res: u32,
+    pub center: u32,
+    pub pga: u8,
+}
+
+#[derive(Debug)]
+pub struct UBXMonSpan {
+    pub version: u8,
+    pub num_rf_blocks: u8,
+    pub blocks: Vec<UBXMonSpanBlock>,
+}
+
+#[derive(Debug)]
+pub struct UBXSecSig {
+    pub version: u8,
+    pub jam_flags: u8,
+    pub spf_flags: u8,
+}
+
+#[derive(Debug)]
+pub struct UBXSecSiglogEvent {
+    pub time_elapsed: u32,
+    pub detection_type: u8,
+    pub event_type: u8,
+}
+
+#[derive(Debug)]
+pub struct UBXSecSiglog {
+    pub version: u8,
+    pub num_events: u8,
+    pub events: Vec<UBXSecSiglogEvent>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,6 +374,10 @@ pub enum UbxMessageType {
     NavHPPosECEF,
     NavCov,
     NavHPPosLLH,
+    NavStatus,
+    NavTimeUtc,
+    NavPl,
+    NavSbas,
     SvIn,
     RxmRawx,
     RxmSfrbx,
@@ -212,6 +386,11 @@ pub enum UbxMessageType {
     RxmSpartn,
     RxmCor,
     RxmPmreq,
+    MonHw3,
+    MonRf,
+    MonSpan,
+    SecSig,
+    SecSiglog,
     Unknown,
 }
 
@@ -221,6 +400,8 @@ pub type NavMessageType = UbxMessageType;
 pub enum UBXMessageClass {
     Nav,
     Receiver,
+    Monitor,
+    Security,
     Unknown,
 }
 
@@ -228,6 +409,8 @@ fn get_msg_class(msg_class: u8) -> UBXMessageClass {
     match msg_class {
         1 => UBXMessageClass::Nav,
         2 => UBXMessageClass::Receiver,
+        10 => UBXMessageClass::Monitor,
+        39 => UBXMessageClass::Security,
         _ => UBXMessageClass::Unknown,
     }
 }
@@ -236,18 +419,24 @@ fn get_data_information(msg_class: UBXMessageClass, data_id: u8) -> UbxMessageTy
     match msg_class {
         UBXMessageClass::Nav => get_nav_message_type_from_id(data_id),
         UBXMessageClass::Receiver => get_receiver_message_type_from_id(data_id),
+        UBXMessageClass::Monitor => get_monitor_message_type_from_id(data_id),
+        UBXMessageClass::Security => get_security_message_type_from_id(data_id),
         UBXMessageClass::Unknown => UbxMessageType::Unknown,
     }
 }
 
 fn get_nav_message_type_from_id(data_id: u8) -> UbxMessageType {
     match data_id {
+        3 => UbxMessageType::NavStatus,
         7 => UbxMessageType::NavPvt,
         19 => UbxMessageType::NavHPPosECEF,
         20 => UbxMessageType::NavHPPosLLH,
+        33 => UbxMessageType::NavTimeUtc,
+        50 => UbxMessageType::NavSbas,
         54 => UbxMessageType::NavCov,
         59 => UbxMessageType::SvIn,
         60 => UbxMessageType::NavRelPosNed,
+        98 => UbxMessageType::NavPl,
         // _ => panic!("Unknown data id: {}", data_id),
         _ => UbxMessageType::Unknown,
     }
@@ -262,6 +451,23 @@ fn get_receiver_message_type_from_id(data_id: u8) -> UbxMessageType {
         51 => UbxMessageType::RxmSpartn,
         52 => UbxMessageType::RxmCor,
         65 => UbxMessageType::RxmPmreq,
+        _ => UbxMessageType::Unknown,
+    }
+}
+
+fn get_monitor_message_type_from_id(data_id: u8) -> UbxMessageType {
+    match data_id {
+        49 => UbxMessageType::MonSpan,
+        55 => UbxMessageType::MonHw3,
+        56 => UbxMessageType::MonRf,
+        _ => UbxMessageType::Unknown,
+    }
+}
+
+fn get_security_message_type_from_id(data_id: u8) -> UbxMessageType {
+    match data_id {
+        9 => UbxMessageType::SecSig,
+        16 => UbxMessageType::SecSiglog,
         _ => UbxMessageType::Unknown,
     }
 }
@@ -289,6 +495,10 @@ pub fn get_nav_message_type(data: &[u8]) -> UbxMessageType {
         | UbxMessageType::NavHPPosECEF
         | UbxMessageType::NavCov
         | UbxMessageType::NavHPPosLLH
+        | UbxMessageType::NavStatus
+        | UbxMessageType::NavTimeUtc
+        | UbxMessageType::NavPl
+        | UbxMessageType::NavSbas
         | UbxMessageType::SvIn) => msg_type,
         _ => UbxMessageType::Unknown,
     }
@@ -309,17 +519,9 @@ fn compare_checksums(data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub fn decode_ubx_nav_hpposecef_msg(data: &[u8]) -> Option<UBXNavHPPosECEF> {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-    // println!("Payload length: {}", payload_length);
-    // if payload_length != 28 {
-    //     println!("invalid payload length");
-    //     return None; // Not enough data
-    // }
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_hpposecef_msg(data: &[u8]) -> Result<UBXNavHPPosECEF> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_HPPOSECEF_LENGTH, "nav-hpposecef")?;
 
     let version = payload[0];
     let itow = get_u32_from_le_byte_array(payload, 4);
@@ -333,7 +535,7 @@ pub fn decode_ubx_nav_hpposecef_msg(data: &[u8]) -> Option<UBXNavHPPosECEF> {
     let invalid_ecef = payload[23];
     let p_acc = get_u32_from_le_byte_array(payload, 24);
 
-    Some(UBXNavHPPosECEF {
+    Ok(UBXNavHPPosECEF {
         version,
         itow,
         ecef_x,
@@ -347,12 +549,9 @@ pub fn decode_ubx_nav_hpposecef_msg(data: &[u8]) -> Option<UBXNavHPPosECEF> {
     })
 }
 
-pub fn decode_ubx_nav_hpposllh_msg(data: &[u8]) -> UBXNavHPPosLLH {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_hpposllh_msg(data: &[u8]) -> Result<UBXNavHPPosLLH> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_HPPOSLLH_LENGTH, "nav-hpposllh")?;
 
     let version = payload[0];
     let invalid_llh = payload[1];
@@ -368,7 +567,7 @@ pub fn decode_ubx_nav_hpposllh_msg(data: &[u8]) -> UBXNavHPPosLLH {
     let h_acc = get_u32_from_le_byte_array(payload, 28);
     let v_acc = get_u32_from_le_byte_array(payload, 32);
 
-    UBXNavHPPosLLH {
+    Ok(UBXNavHPPosLLH {
         version,
         invalid_llh,
         itow,
@@ -382,15 +581,12 @@ pub fn decode_ubx_nav_hpposllh_msg(data: &[u8]) -> UBXNavHPPosLLH {
         h_msl_hp,
         h_acc,
         v_acc,
-    }
+    })
 }
 
-pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> UBXNavPvt {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> Result<UBXNavPvt> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_PVT_LENGTH, "nav-pvt")?;
 
     let itow = get_u32_from_le_byte_array(payload, 0);
     let year = get_u16_from_le_byte_array(payload, 4);
@@ -421,9 +617,9 @@ pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> UBXNavPvt {
     let confirmed_time = (flags2 >> 7) & 1;
 
     let num_sv = payload[23];
-    let lon = (get_i32_from_le_byte_array(payload, 24) as f32) * 1e-7;
-    let lat = (get_i32_from_le_byte_array(payload, 28) as f32) * 1e-7;
-    let height = get_i32_from_le_byte_array(payload, 32) as f32 * 1e-3;
+    let lon = (get_i32_from_le_byte_array(payload, 24) as f64) * 1e-7;
+    let lat = (get_i32_from_le_byte_array(payload, 28) as f64) * 1e-7;
+    let height = get_i32_from_le_byte_array(payload, 32) as f64 * 1e-3;
     let h_msl = get_i32_from_le_byte_array(payload, 36) as f32 * 1e-3;
     let h_acc = get_u32_from_le_byte_array(payload, 40) as f32 * 1e-3;
     let v_acc = get_u32_from_le_byte_array(payload, 44) as f32 * 1e-3;
@@ -443,7 +639,7 @@ pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> UBXNavPvt {
     let mag_dec = get_i16_from_le_byte_array(payload, 88) as f32 * 1e-2;
     let mag_acc = get_u16_from_le_byte_array(payload, 90) as f32 * 1e-2;
 
-    UBXNavPvt {
+    Ok(UBXNavPvt {
         itow,
         year,
         month,
@@ -486,15 +682,12 @@ pub fn decode_ubx_nav_pvt_msg(data: &[u8]) -> UBXNavPvt {
         head_veh,
         mag_dec,
         mag_acc,
-    }
+    })
 }
 
-pub fn decode_ubx_nav_relposned(data: &[u8]) -> UBXNavRelPosNed {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_relposned(data: &[u8]) -> Result<UBXNavRelPosNed> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_RELPOSNED_LENGTH, "nav-relposned")?;
 
     let version = payload[0];
     let ref_station_id = get_u16_from_le_byte_array(payload, 2);
@@ -524,7 +717,7 @@ pub fn decode_ubx_nav_relposned(data: &[u8]) -> UBXNavRelPosNed {
     let rel_pos_heading_valid = flags[1] & 1;
     let rel_pos_normalized = (flags[1] >> 1) & 1;
 
-    UBXNavRelPosNed {
+    Ok(UBXNavRelPosNed {
         version,
         ref_station_id,
         itow,
@@ -551,15 +744,12 @@ pub fn decode_ubx_nav_relposned(data: &[u8]) -> UBXNavRelPosNed {
         ref_obs_miss: ref_obs_miss == 1,
         rel_pos_heading_valid: rel_pos_heading_valid == 1,
         rel_pos_normalized: rel_pos_normalized == 1,
-    }
+    })
 }
 
-pub fn decode_ubx_nav_cov_msg(data: &[u8]) -> Option<UBXNavCov> {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_cov_msg(data: &[u8]) -> Result<UBXNavCov> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_COV_LENGTH, "nav-cov")?;
 
     let itow = get_u32_from_le_byte_array(payload, 0);
     let version = payload[4];
@@ -578,7 +768,7 @@ pub fn decode_ubx_nav_cov_msg(data: &[u8]) -> Option<UBXNavCov> {
     let vel_cov_ed = get_f32_from_le_byte_array(payload, 56) as f32;
     let vel_cov_dd = get_f32_from_le_byte_array(payload, 60) as f32;
 
-    Some(UBXNavCov {
+    Ok(UBXNavCov {
         itow,
         version,
         pos_cov_valid,
@@ -598,12 +788,9 @@ pub fn decode_ubx_nav_cov_msg(data: &[u8]) -> Option<UBXNavCov> {
     })
 }
 
-pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Option<UBXNavSvIn> {
-    compare_checksums(data).expect("ublox checksum error");
-
-    let payload_length = get_u16_from_le_byte_array(data, 4) as usize;
-
-    let payload = &data[6..6 + payload_length].to_vec();
+pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Result<UBXNavSvIn> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_SVIN_LENGTH, "nav-svin")?;
 
     let version = payload[0];
     let itow = get_u32_from_le_byte_array(payload, 4);
@@ -620,7 +807,7 @@ pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Option<UBXNavSvIn> {
     let active = payload[37];
     let reserved = get_u16_from_le_byte_array(payload, 38);
 
-    Some(UBXNavSvIn {
+    Ok(UBXNavSvIn {
         version,
         itow,
         dur,
@@ -635,6 +822,103 @@ pub fn decode_ubx_nav_svin_msg(data: &[u8]) -> Option<UBXNavSvIn> {
         valid,
         active,
         reserved,
+    })
+}
+
+pub fn decode_ubx_nav_status_msg(data: &[u8]) -> Result<UBXNavStatus> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_STATUS_LENGTH, "nav-status")?;
+
+    Ok(UBXNavStatus {
+        itow: get_u32_from_le_byte_array(payload, 0),
+        gps_fix: payload[4],
+        flags: payload[5],
+        fix_stat: payload[6],
+        flags2: payload[7],
+        ttff: get_u32_from_le_byte_array(payload, 8),
+        msss: get_u32_from_le_byte_array(payload, 12),
+    })
+}
+
+pub fn decode_ubx_nav_timeutc_msg(data: &[u8]) -> Result<UBXNavTimeUtc> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_TIMEUTC_LENGTH, "nav-timeutc")?;
+
+    Ok(UBXNavTimeUtc {
+        itow: get_u32_from_le_byte_array(payload, 0),
+        t_acc: get_u32_from_le_byte_array(payload, 4),
+        nano: get_i32_from_le_byte_array(payload, 8),
+        year: get_u16_from_le_byte_array(payload, 12),
+        month: payload[14],
+        day: payload[15],
+        hour: payload[16],
+        min: payload[17],
+        sec: payload[18],
+        valid: payload[19],
+    })
+}
+
+pub fn decode_ubx_nav_pl_msg(data: &[u8]) -> Result<UBXNavPl> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_PL_LENGTH, "nav-pl")?;
+
+    Ok(UBXNavPl {
+        msg_version: payload[0],
+        tmir_coeff: payload[1],
+        tmir_exp: payload[2] as i8,
+        pl_pos_valid: payload[3],
+        pl_pos_frame: payload[4],
+        pl_vel_valid: payload[5],
+        pl_vel_frame: payload[6],
+        pl_time_valid: payload[7],
+        pl_pos_invalidity_reason: payload[8],
+        pl_vel_invalidity_reason: payload[9],
+        pl_time_invalidity_reason: payload[10],
+        itow: get_u32_from_le_byte_array(payload, 12),
+        pl_pos1: get_u32_from_le_byte_array(payload, 16),
+        pl_pos2: get_u32_from_le_byte_array(payload, 20),
+        pl_pos3: get_u32_from_le_byte_array(payload, 24),
+        pl_vel1: get_u32_from_le_byte_array(payload, 28),
+        pl_vel2: get_u32_from_le_byte_array(payload, 32),
+        pl_vel3: get_u32_from_le_byte_array(payload, 36),
+        pl_pos_horiz_orient: get_u16_from_le_byte_array(payload, 40),
+        pl_vel_horiz_orient: get_u16_from_le_byte_array(payload, 42),
+        pl_time: get_u32_from_le_byte_array(payload, 44),
+    })
+}
+
+pub fn decode_ubx_nav_sbas_msg(data: &[u8]) -> Result<UBXNavSbas> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, NAV_SBAS_HEADER_LENGTH, "nav-sbas")?;
+
+    let cnt = payload[8] as usize;
+    let payload_len = NAV_SBAS_HEADER_LENGTH
+        .checked_add(cnt * NAV_SBAS_SV_LENGTH)
+        .ok_or_else(|| anyhow::anyhow!("nav-sbas sv block length overflow"))?;
+    ensure_payload_len(payload, payload_len, "nav-sbas")?;
+
+    let mut svs = Vec::with_capacity(cnt);
+    for n in 0..cnt {
+        let offset = NAV_SBAS_HEADER_LENGTH + n * NAV_SBAS_SV_LENGTH;
+        svs.push(UBXNavSbasSv {
+            svid: payload[offset],
+            udre: payload[offset + 2],
+            sv_sys: payload[offset + 3],
+            sv_service: payload[offset + 4],
+            prc: get_i16_from_le_byte_array(payload, offset + 6),
+            ic: get_i16_from_le_byte_array(payload, offset + 10),
+        });
+    }
+
+    Ok(UBXNavSbas {
+        itow: get_u32_from_le_byte_array(payload, 0),
+        geo: payload[4],
+        mode: payload[5],
+        sys: payload[6] as i8,
+        service: payload[7],
+        cnt: payload[8],
+        status_flags: payload[9],
+        svs,
     })
 }
 
@@ -659,7 +943,7 @@ pub fn decode_ubx_rxm_rawx_msg(data: &[u8]) -> Result<UBXRxmRawx> {
         "rawx measurement blocks exceed payload length"
     );
 
-    let mut meas: Vec<UBXRawxMeas> = Vec::new();
+    let mut measurements: Vec<UBXRxmRawxMeas> = Vec::new();
     let mut offset: usize = RAWX_HEADER_LENGTH;
 
     for _ in 0..num_meas {
@@ -670,27 +954,14 @@ pub fn decode_ubx_rxm_rawx_msg(data: &[u8]) -> Result<UBXRxmRawx> {
         let sv_id: u8 = payload[offset + 21];
         let sig_id: u8 = payload[offset + 22];
         let freq_id: u8 = payload[offset + 23];
-        let lock_time: u16 = u16::from_le_bytes(payload[offset + 24..offset + 26].try_into()?);
+        let locktime: u16 = u16::from_le_bytes(payload[offset + 24..offset + 26].try_into()?);
         let cno: u8 = payload[offset + 26];
-
-        // Raw bytes:
-        let pr_raw: u8 = payload[offset + 27];
-        let cp_raw: u8 = payload[offset + 28];
-        let do_raw: u8 = payload[offset + 29];
-
-        // Extract lower 4 bits (bits 3..0)
-        let pr_n: u32 = (pr_raw & 0x0F) as u32;
-        let cp_n: u32 = (cp_raw & 0x0F) as u32;
-        let do_n: u32 = (do_raw & 0x0F) as u32;
-
-        // Apply UBX RAWX scaling rules:
-        let pr_stdev: f32 = 0.01 * (2u32.pow(pr_n) as f32); // meters
-        let cp_stdev: f32 = 0.004 * (cp_n as f32); // cycles
-        let do_stdev: f32 = 0.002 * (2u32.pow(do_n) as f32); // Hz
-
+        let pr_stdev: u8 = payload[offset + 27];
+        let cp_stdev: u8 = payload[offset + 28];
+        let do_stdev: u8 = payload[offset + 29];
         let trk_stat: u8 = payload[offset + 30];
 
-        meas.push(UBXRawxMeas {
+        measurements.push(UBXRxmRawxMeas {
             pr_mes,
             cp_mes,
             do_mes,
@@ -698,7 +969,7 @@ pub fn decode_ubx_rxm_rawx_msg(data: &[u8]) -> Result<UBXRxmRawx> {
             sv_id,
             sig_id,
             freq_id,
-            lock_time,
+            locktime,
             cno,
             pr_stdev,
             cp_stdev,
@@ -716,7 +987,7 @@ pub fn decode_ubx_rxm_rawx_msg(data: &[u8]) -> Result<UBXRxmRawx> {
         num_meas,
         rec_stat,
         version,
-        meas,
+        measurements,
     })
 }
 
@@ -743,6 +1014,14 @@ fn checked_ubx_payload(data: &[u8]) -> Result<&[u8]> {
     compare_checksums(frame)?;
 
     Ok(&frame[HEADER_SIZE..payload_end])
+}
+
+fn ensure_payload_len(payload: &[u8], minimum_len: usize, message_name: &str) -> Result<()> {
+    anyhow::ensure!(
+        payload.len() >= minimum_len,
+        "{message_name} payload is shorter than {minimum_len} bytes"
+    );
+    Ok(())
 }
 
 pub fn decode_ubx_rxm_sfrbx_msg(data: &[u8]) -> Result<UBXRxmSfrbx> {
@@ -783,6 +1062,142 @@ pub fn decode_ubx_rxm_sfrbx_msg(data: &[u8]) -> Result<UBXRxmSfrbx> {
     })
 }
 
+pub fn decode_ubx_mon_hw3_msg(data: &[u8]) -> Result<UBXMonHw3> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, MON_HW3_HEADER_LENGTH, "mon-hw3")?;
+
+    let n_pins = payload[1] as usize;
+    let payload_len = MON_HW3_HEADER_LENGTH
+        .checked_add(n_pins * MON_HW3_PIN_LENGTH)
+        .ok_or_else(|| anyhow::anyhow!("mon-hw3 pin block length overflow"))?;
+    ensure_payload_len(payload, payload_len, "mon-hw3")?;
+
+    let mut pins = Vec::with_capacity(n_pins);
+    for n in 0..n_pins {
+        let offset = MON_HW3_HEADER_LENGTH + n * MON_HW3_PIN_LENGTH;
+        pins.push(UBXMonHw3Pin {
+            pin_id: payload[offset],
+            pin_mask: get_u16_from_le_byte_array(payload, offset + 1),
+            vp: payload[offset + 3],
+        });
+    }
+
+    let hw_version = String::from_utf8_lossy(&payload[4..12])
+        .trim_end_matches(char::from(0))
+        .to_string();
+
+    Ok(UBXMonHw3 {
+        version: payload[0],
+        n_pins: payload[1],
+        flags: payload[2],
+        hw_version,
+        pins,
+    })
+}
+
+pub fn decode_ubx_mon_rf_msg(data: &[u8]) -> Result<UBXMonRf> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, MON_RF_HEADER_LENGTH, "mon-rf")?;
+
+    let n_blocks = payload[1] as usize;
+    let payload_len = MON_RF_HEADER_LENGTH
+        .checked_add(n_blocks * MON_RF_BLOCK_LENGTH)
+        .ok_or_else(|| anyhow::anyhow!("mon-rf block length overflow"))?;
+    ensure_payload_len(payload, payload_len, "mon-rf")?;
+
+    let mut blocks = Vec::with_capacity(n_blocks);
+    for n in 0..n_blocks {
+        let offset = MON_RF_HEADER_LENGTH + n * MON_RF_BLOCK_LENGTH;
+        blocks.push(UBXMonRfBlock {
+            block_id: payload[offset],
+            flags: payload[offset + 1],
+            ant_status: payload[offset + 2],
+            ant_power: payload[offset + 3],
+            post_status: get_u32_from_le_byte_array(payload, offset + 4),
+            noise_per_ms: get_u16_from_le_byte_array(payload, offset + 8),
+            agc_cnt: get_u16_from_le_byte_array(payload, offset + 10),
+            cw_suppression: payload[offset + 12],
+            ofs_i: payload[offset + 13] as i8,
+            mag_i: payload[offset + 14],
+            ofs_q: payload[offset + 15] as i8,
+            mag_q: payload[offset + 16],
+        });
+    }
+
+    Ok(UBXMonRf {
+        version: payload[0],
+        n_blocks: payload[1],
+        blocks,
+    })
+}
+
+pub fn decode_ubx_mon_span_msg(data: &[u8]) -> Result<UBXMonSpan> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, MON_SPAN_HEADER_LENGTH, "mon-span")?;
+
+    let num_rf_blocks = payload[1] as usize;
+    let payload_len = MON_SPAN_HEADER_LENGTH
+        .checked_add(num_rf_blocks * MON_SPAN_BLOCK_LENGTH)
+        .ok_or_else(|| anyhow::anyhow!("mon-span block length overflow"))?;
+    ensure_payload_len(payload, payload_len, "mon-span")?;
+
+    let mut blocks = Vec::with_capacity(num_rf_blocks);
+    for n in 0..num_rf_blocks {
+        let offset = MON_SPAN_HEADER_LENGTH + n * MON_SPAN_BLOCK_LENGTH;
+        blocks.push(UBXMonSpanBlock {
+            spectrum: payload[offset..offset + 256].to_vec(),
+            span: get_u32_from_le_byte_array(payload, offset + 256),
+            res: get_u32_from_le_byte_array(payload, offset + 260),
+            center: get_u32_from_le_byte_array(payload, offset + 264),
+            pga: payload[offset + 268],
+        });
+    }
+
+    Ok(UBXMonSpan {
+        version: payload[0],
+        num_rf_blocks: payload[1],
+        blocks,
+    })
+}
+
+pub fn decode_ubx_sec_sig_msg(data: &[u8]) -> Result<UBXSecSig> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, SEC_SIG_LENGTH, "sec-sig")?;
+
+    Ok(UBXSecSig {
+        version: payload[0],
+        jam_flags: payload[4],
+        spf_flags: payload[8],
+    })
+}
+
+pub fn decode_ubx_sec_siglog_msg(data: &[u8]) -> Result<UBXSecSiglog> {
+    let payload = checked_ubx_payload(data)?;
+    ensure_payload_len(payload, SEC_SIGLOG_HEADER_LENGTH, "sec-siglog")?;
+
+    let num_events = payload[1] as usize;
+    let payload_len = SEC_SIGLOG_HEADER_LENGTH
+        .checked_add(num_events * SEC_SIGLOG_EVENT_LENGTH)
+        .ok_or_else(|| anyhow::anyhow!("sec-siglog event length overflow"))?;
+    ensure_payload_len(payload, payload_len, "sec-siglog")?;
+
+    let mut events = Vec::with_capacity(num_events);
+    for n in 0..num_events {
+        let offset = SEC_SIGLOG_HEADER_LENGTH + n * SEC_SIGLOG_EVENT_LENGTH;
+        events.push(UBXSecSiglogEvent {
+            time_elapsed: get_u32_from_le_byte_array(payload, offset),
+            detection_type: payload[offset + 4],
+            event_type: payload[offset + 5],
+        });
+    }
+
+    Ok(UBXSecSiglog {
+        version: payload[0],
+        num_events: payload[1],
+        events,
+    })
+}
+
 /// 8 bit Fletcher checksum algorithm
 fn compute_checksum(data: &Vec<u8>) -> (u8, u8) {
     let mut ck_a: u8 = 0;
@@ -808,6 +1223,21 @@ mod tests {
         let (ck_a, ck_b) = compute_checksum(&frame[2..].to_vec());
         frame.extend_from_slice(&[ck_a, ck_b]);
         frame
+    }
+
+    fn nav_pvt_payload() -> Vec<u8> {
+        let mut payload = vec![0; NAV_PVT_LENGTH];
+        payload[4..6].copy_from_slice(&2026_u16.to_le_bytes());
+        payload[6] = 6;
+        payload[7] = 6;
+        payload[8] = 12;
+        payload[9] = 0;
+        payload[10] = 0;
+        payload[11] = 0b0000_0111;
+        payload[24..28].copy_from_slice(&123_456_789_i32.to_le_bytes());
+        payload[28..32].copy_from_slice(&(-456_789_123_i32).to_le_bytes());
+        payload[32..36].copy_from_slice(&123_456_789_i32.to_le_bytes());
+        payload
     }
 
     // #[test]
@@ -914,6 +1344,40 @@ mod tests {
     }
 
     #[test]
+    fn test_decode_nav_pvt_rejects_truncated_declared_frame() {
+        let mut frame = ubx_frame(0x01, 0x07, &nav_pvt_payload());
+        frame.pop();
+
+        let err = decode_ubx_nav_pvt_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("ubx frame is shorter than declared payload length"));
+    }
+
+    #[test]
+    fn test_decode_nav_pvt_rejects_payload_shorter_than_fixed_length() {
+        let frame = ubx_frame(0x01, 0x07, &[0; 8]);
+
+        let err = decode_ubx_nav_pvt_msg(&frame).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("nav-pvt payload is shorter than 92 bytes"));
+    }
+
+    #[test]
+    fn test_decode_nav_pvt_preserves_f64_position_precision() {
+        let frame = ubx_frame(0x01, 0x07, &nav_pvt_payload());
+
+        let nav_pvt = decode_ubx_nav_pvt_msg(&frame).unwrap();
+
+        assert!((nav_pvt.lon - 12.3456789).abs() < 1e-12);
+        assert!((nav_pvt.lat - -45.6789123).abs() < 1e-12);
+        assert!((nav_pvt.height - 123_456.789).abs() < 1e-9);
+    }
+
+    #[test]
     fn test_parse_ubx_nav_cov_message() {
         let message_bytes: Vec<u8> = vec![
             // UBX header
@@ -949,16 +1413,115 @@ mod tests {
             compute_checksum(&message_bytes[2..HEADER_SIZE + 64].to_vec())
         );
 
-        let parsed_message = decode_ubx_nav_cov_msg(&message_bytes);
+        let nav_cov = decode_ubx_nav_cov_msg(&message_bytes).unwrap();
+        println!("{:?}", nav_cov);
+        // assert_eq!(nav_cov.itow, 305419896);
+        assert_eq!(nav_cov.version, 0);
+        // ... assert other fields as needed
+    }
 
-        match parsed_message {
-            Some(nav_cov) => {
-                println!("{:?}", nav_cov);
-                // assert_eq!(nav_cov.itow, 305419896);
-                assert_eq!(nav_cov.version, 0);
-                // ... assert other fields as needed
-            }
-            _ => panic!("Unexpected message type"),
-        }
+    #[test]
+    fn test_get_message_type_detects_monitor_and_security_messages() {
+        let mon_hw3_msg = [0xB5, 0x62, 0x0A, 0x37];
+        let sec_sig_msg = [0xB5, 0x62, 0x27, 0x09];
+
+        assert_eq!(
+            get_ubx_message_class(&mon_hw3_msg),
+            UBXMessageClass::Monitor
+        );
+        assert_eq!(get_message_type(&mon_hw3_msg), UbxMessageType::MonHw3);
+        assert_eq!(
+            get_ubx_message_class(&sec_sig_msg),
+            UBXMessageClass::Security
+        );
+        assert_eq!(get_message_type(&sec_sig_msg), UbxMessageType::SecSig);
+    }
+
+    #[test]
+    fn test_parse_new_nav_messages() {
+        let mut status_payload = vec![0; NAV_STATUS_LENGTH];
+        status_payload[4] = 3;
+        let status = decode_ubx_nav_status_msg(&ubx_frame(0x01, 0x03, &status_payload)).unwrap();
+        assert_eq!(status.gps_fix, 3);
+
+        let mut timeutc_payload = vec![0; NAV_TIMEUTC_LENGTH];
+        timeutc_payload[12..14].copy_from_slice(&2026u16.to_le_bytes());
+        timeutc_payload[14] = 5;
+        let timeutc = decode_ubx_nav_timeutc_msg(&ubx_frame(0x01, 0x21, &timeutc_payload)).unwrap();
+        assert_eq!(timeutc.year, 2026);
+        assert_eq!(timeutc.month, 5);
+
+        let mut pl_payload = vec![0; NAV_PL_LENGTH];
+        pl_payload[0] = 1;
+        pl_payload[12..16].copy_from_slice(&123u32.to_le_bytes());
+        let pl = decode_ubx_nav_pl_msg(&ubx_frame(0x01, 0x62, &pl_payload)).unwrap();
+        assert_eq!(pl.msg_version, 1);
+        assert_eq!(pl.itow, 123);
+
+        let mut sbas_payload = vec![0; NAV_SBAS_HEADER_LENGTH + NAV_SBAS_SV_LENGTH];
+        sbas_payload[8] = 1;
+        sbas_payload[12] = 42;
+        let sbas = decode_ubx_nav_sbas_msg(&ubx_frame(0x01, 0x32, &sbas_payload)).unwrap();
+        assert_eq!(sbas.cnt, 1);
+        assert_eq!(sbas.svs[0].svid, 42);
+    }
+
+    #[test]
+    fn test_parse_rawx_measurements_match_microampere_api() {
+        let mut rawx_payload = vec![0; RAWX_HEADER_LENGTH + RAWX_MEASUREMENT_LENGTH];
+        rawx_payload[11] = 1;
+        rawx_payload[13] = 1;
+        rawx_payload[RAWX_HEADER_LENGTH + 20] = 1;
+        rawx_payload[RAWX_HEADER_LENGTH + 21] = 22;
+        rawx_payload[RAWX_HEADER_LENGTH + 24..RAWX_HEADER_LENGTH + 26]
+            .copy_from_slice(&55u16.to_le_bytes());
+        rawx_payload[RAWX_HEADER_LENGTH + 27] = 3;
+        let rawx = decode_ubx_rxm_rawx_msg(&ubx_frame(0x02, 0x15, &rawx_payload)).unwrap();
+
+        assert_eq!(rawx.num_meas, 1);
+        assert_eq!(rawx.measurements[0].sv_id, 22);
+        assert_eq!(rawx.measurements[0].locktime, 55);
+        assert_eq!(rawx.measurements[0].pr_stdev, 3);
+    }
+
+    #[test]
+    fn test_parse_mon_and_sec_messages() {
+        let mut hw3_payload = vec![0; MON_HW3_HEADER_LENGTH + MON_HW3_PIN_LENGTH];
+        hw3_payload[1] = 1;
+        hw3_payload[4..8].copy_from_slice(b"HW3\0");
+        hw3_payload[12] = 7;
+        let hw3 = decode_ubx_mon_hw3_msg(&ubx_frame(0x0A, 0x37, &hw3_payload)).unwrap();
+        assert_eq!(hw3.n_pins, 1);
+        assert_eq!(hw3.pins[0].pin_id, 7);
+
+        let mut rf_payload = vec![0; MON_RF_HEADER_LENGTH + MON_RF_BLOCK_LENGTH];
+        rf_payload[1] = 1;
+        rf_payload[4] = 2;
+        let rf = decode_ubx_mon_rf_msg(&ubx_frame(0x0A, 0x38, &rf_payload)).unwrap();
+        assert_eq!(rf.n_blocks, 1);
+        assert_eq!(rf.blocks[0].block_id, 2);
+
+        let mut span_payload = vec![0; MON_SPAN_HEADER_LENGTH + MON_SPAN_BLOCK_LENGTH];
+        span_payload[1] = 1;
+        span_payload[4] = 99;
+        let span = decode_ubx_mon_span_msg(&ubx_frame(0x0A, 0x31, &span_payload)).unwrap();
+        assert_eq!(span.num_rf_blocks, 1);
+        assert_eq!(span.blocks[0].spectrum[0], 99);
+
+        let mut sig_payload = vec![0; SEC_SIG_LENGTH];
+        sig_payload[4] = 3;
+        sig_payload[8] = 4;
+        let sig = decode_ubx_sec_sig_msg(&ubx_frame(0x27, 0x09, &sig_payload)).unwrap();
+        assert_eq!(sig.jam_flags, 3);
+        assert_eq!(sig.spf_flags, 4);
+
+        let mut siglog_payload = vec![0; SEC_SIGLOG_HEADER_LENGTH + SEC_SIGLOG_EVENT_LENGTH];
+        siglog_payload[1] = 1;
+        siglog_payload[8..12].copy_from_slice(&55u32.to_le_bytes());
+        siglog_payload[12] = 6;
+        let siglog = decode_ubx_sec_siglog_msg(&ubx_frame(0x27, 0x10, &siglog_payload)).unwrap();
+        assert_eq!(siglog.num_events, 1);
+        assert_eq!(siglog.events[0].time_elapsed, 55);
+        assert_eq!(siglog.events[0].detection_type, 6);
     }
 }

@@ -167,7 +167,8 @@ mod tests {
 
                 match msg_type {
                     ublox_f9p_parser::UbxMessageType::NavPvt => {
-                        let nav_pvt_msg = ublox_f9p_parser::decode_ubx_nav_pvt_msg(&sensor_data);
+                        let nav_pvt_msg =
+                            ublox_f9p_parser::decode_ubx_nav_pvt_msg(&sensor_data).unwrap();
                         println!("nav_pvt_msg: {:?}", nav_pvt_msg);
                         println!("HEADING: {}", nav_pvt_msg.head_veh);
                         println!("HEADING VALID: {}", nav_pvt_msg.head_veh_valid);
@@ -176,7 +177,7 @@ mod tests {
                     }
                     ublox_f9p_parser::UbxMessageType::NavRelPosNed => {
                         let nav_rel_pos_ned_msg =
-                            ublox_f9p_parser::decode_ubx_nav_relposned(&sensor_data);
+                            ublox_f9p_parser::decode_ubx_nav_relposned(&sensor_data).unwrap();
                         println!("nav_rel_pos_ned_msg: {:?}", nav_rel_pos_ned_msg);
                     }
                     _ => {}

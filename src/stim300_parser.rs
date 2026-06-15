@@ -93,7 +93,14 @@ const TEMP_OUTPUT_BYTE_LENGTH: usize = 2;
 
 #[doc = "parse_stim300_data"]
 pub fn parse_stim300_data(data: &[u8]) -> Result<IMUMessage> {
-    assert!(data.len() >= MIN_DATA_LENGTH); // minimum number of bytes
+    if data.len() < MIN_DATA_LENGTH {
+        return Err(format!(
+            "Data length is too short: {} bytes, expected at least {} bytes",
+            data.len(),
+            MIN_DATA_LENGTH
+        )
+        .into());
+    }
     let (imu_mode, data_length, num_crc_dummy_bytes) = get_data_information(data[0])?;
 
     let computed_checksum = compute_checksum(data, data_length, num_crc_dummy_bytes);
@@ -255,7 +262,7 @@ fn get_data_information(data_identifier: u8) -> Result<(IMUMode, usize, usize)> 
         0xA5 => Ok((IMUMode::RAT, 42, 2)),
         0xA6 => Ok((IMUMode::RIT, 42, 2)),
         0xA7 => Ok((IMUMode::RAIT, 59, 1)),
-        _ => Err("This IMU Mode is not supported.")?,
+        _ => Err("This IMU Mode is not supported.".into()),
     }
 }
 
@@ -417,16 +424,9 @@ fn get_received_checksum(data: &[u8], data_length: usize) -> u32 {
 }
 
 fn compare_checksums(computed_checksum: u32, received_checksum: u32) -> Result<()> {
-    // assert_eq!(computed_checksum, received_checksum);
     match computed_checksum == received_checksum {
         true => Ok(()),
-        false => {
-            println!(
-                "Error: computed_checksum {} did not match received_checksum {}",
-                computed_checksum, received_checksum
-            );
-            Err("Computed checksum did not match received checksum.")?
-        }
+        false => Err("Computed checksum did not match received checksum.".into()),
     }
 }
 
@@ -468,5 +468,12 @@ mod tests {
         // latency: 62465.0
 
         //assert_eq!(parse_stim300_data(&data), imu_msg);
+    }
+
+    #[test]
+    fn short_stim300_frame_returns_error() {
+        let err = parse_stim300_data(&[]).unwrap_err();
+
+        assert!(err.to_string().contains("Data length is too short"));
     }
 }
