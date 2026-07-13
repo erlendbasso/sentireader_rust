@@ -254,9 +254,9 @@ impl TimeSync {
 
         if let Some(pps_toa) = self.latest_pps_toa.filter(|_| !self.pps_is_stale()) {
             let offset_ticks = counter_delta(nav_pvt_toa, pps_toa);
-            self.last_nav_pvt_offset_ms = ticks_to_ms(offset_ticks);
 
             if valid_nav_pvt_pps_offset_ticks(offset_ticks) {
+                self.last_nav_pvt_offset_ms = ticks_to_ms(offset_ticks);
                 self.pending_nav_pvt = None;
                 return self.accept_nav_pvt_pps_match(reference_time, pps_toa);
             }
@@ -311,25 +311,23 @@ impl TimeSync {
         };
 
         let offset_ticks = counter_delta(pending_nav_pvt.nav_pvt_toa, pps_toa);
-        self.last_nav_pvt_offset_ms = ticks_to_ms(offset_ticks);
+        let offset_ms = ticks_to_ms(offset_ticks);
 
         if valid_nav_pvt_pps_offset_ticks(offset_ticks) {
+            self.last_nav_pvt_offset_ms = offset_ms;
             let _ = self.accept_nav_pvt_pps_match(pending_nav_pvt.reference_time, pps_toa);
         } else {
             let reason = if offset_ticks < 0 {
                 format!(
                     "Pending NAV-PVT/PPS TOA mismatch rejected: PPS TOA is after NAV-PVT \
                      (offset {:.3} ms, pps_toa={}, nav_pvt_toa={})",
-                    self.last_nav_pvt_offset_ms, pps_toa, pending_nav_pvt.nav_pvt_toa
+                    offset_ms, pps_toa, pending_nav_pvt.nav_pvt_toa
                 )
             } else {
                 format!(
                     "Pending NAV-PVT/PPS TOA mismatch rejected: offset {:.3} ms exceeds {:.3} ms \
                      (pps_toa={}, nav_pvt_toa={})",
-                    self.last_nav_pvt_offset_ms,
-                    MAX_NAV_PVT_OFFSET_MS,
-                    pps_toa,
-                    pending_nav_pvt.nav_pvt_toa
+                    offset_ms, MAX_NAV_PVT_OFFSET_MS, pps_toa, pending_nav_pvt.nav_pvt_toa
                 )
             };
             let _ = self.reject_nav_pvt(reason);
@@ -702,7 +700,7 @@ mod tests {
         sync.update_pps(0);
 
         assert!(sync.pending_nav_pvt.is_none());
-        assert!((sync.last_nav_pvt_offset_ms - 250.00001).abs() < 1e-9);
+        assert_eq!(sync.last_nav_pvt_offset_ms, 0.0);
         assert_eq!(sync.consecutive_nav_pvt_valid, 0);
         assert!(!sync.nav_pvt_trusted);
     }
@@ -837,9 +835,39 @@ mod tests {
         sync.update_pps(200);
 
         assert!(sync.pending_nav_pvt.is_none());
-        assert!((sync.last_nav_pvt_offset_ms + 0.001).abs() < 1e-9);
+        assert_eq!(sync.last_nav_pvt_offset_ms, 0.0);
         assert_eq!(sync.consecutive_nav_pvt_valid, 0);
         assert!(!sync.nav_pvt_trusted);
+    }
+
+    #[test]
+    fn provisional_previous_pps_offset_is_not_published_before_pending_match() {
+        let mut sync = TimeSync::new();
+        let reference_time = NaiveDate::from_ymd_opt(2026, 7, 13)
+            .unwrap()
+            .and_hms_opt(12, 59, 48)
+            .unwrap();
+        let previous_pps_toa = 1_948_513_100;
+        let next_pps_toa = previous_pps_toa.wrapping_add(PPS_PERIOD_TICKS);
+        let nav_pvt_toa = previous_pps_toa.wrapping_add(106_000_000);
+
+        sync.update_pps(previous_pps_toa);
+
+        let update = sync.update_nav_pvt(
+            &pvt_with_itow(reference_time, 133_206_000),
+            nav_pvt_toa,
+        );
+
+        assert!(matches!(update, NavPvtUpdate::PendingPpsMatch));
+        assert!(sync.pending_nav_pvt.is_some());
+        assert_eq!(sync.last_nav_pvt_offset_ms, 0.0);
+        assert_eq!(sync.status_snapshot().nav_pvt_offset_ms, 0.0);
+
+        sync.update_pps(next_pps_toa);
+
+        assert!(sync.pending_nav_pvt.is_none());
+        assert_eq!(sync.last_nav_pvt_offset_ms, 60.0);
+        assert_eq!(sync.status_snapshot().nav_pvt_offset_ms, 60.0);
     }
 
     #[test]
