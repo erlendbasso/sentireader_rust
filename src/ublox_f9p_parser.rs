@@ -21,13 +21,14 @@ const NAV_TIMEUTC_LENGTH: usize = 20;
 const NAV_PL_LENGTH: usize = 52;
 const NAV_SBAS_HEADER_LENGTH: usize = 12;
 const NAV_SBAS_SV_LENGTH: usize = 12;
-const MON_HW3_HEADER_LENGTH: usize = 12;
-const MON_HW3_PIN_LENGTH: usize = 4;
+const MON_HW3_HEADER_LENGTH: usize = 22;
+const MON_HW3_PIN_LENGTH: usize = 6;
 const MON_RF_HEADER_LENGTH: usize = 4;
 const MON_RF_BLOCK_LENGTH: usize = 24;
 const MON_SPAN_HEADER_LENGTH: usize = 4;
 const MON_SPAN_BLOCK_LENGTH: usize = 272;
-const SEC_SIG_LENGTH: usize = 12;
+const SEC_SIG_HEADER_LENGTH: usize = 4;
+const SEC_SIG_CENT_FREQ_LENGTH: usize = 4;
 const SEC_SIGLOG_HEADER_LENGTH: usize = 8;
 const SEC_SIGLOG_EVENT_LENGTH: usize = 8;
 
@@ -87,14 +88,14 @@ pub struct UBXNavRelPosNed {
     pub rel_pos_d: f32,        // unit [m]
     pub rel_pos_length: f32,   // unit [m]
     pub rel_pos_heading: f32,  // unit [deg]
-    pub rel_pos_hpn: i8,       // unit [mm]
-    pub rel_pos_hpe: i8,       // unit [mm]
-    pub rel_pos_hpd: i8,       // unit [mm]
-    pub rel_pos_hp_length: i8, // unit [mm]
-    pub acc_n: u32,            // unit [mm]
-    pub acc_e: u32,            // unit [mm]
-    pub acc_d: u32,            // unit [mm]
-    pub acc_length: u32,       // unit [mm]
+    pub rel_pos_hpn: i8,       // unit [0.1 mm]
+    pub rel_pos_hpe: i8,       // unit [0.1 mm]
+    pub rel_pos_hpd: i8,       // unit [0.1 mm]
+    pub rel_pos_hp_length: i8, // unit [0.1 mm]
+    pub acc_n: f32,            // unit [m]
+    pub acc_e: f32,            // unit [m]
+    pub acc_d: f32,            // unit [m]
+    pub acc_length: f32,       // unit [m]
     pub acc_heading: f32,      // unit [deg]
     pub gnss_fix_ok: bool,
     pub diff_soln: bool,
@@ -349,8 +350,18 @@ pub struct UBXMonSpan {
 #[derive(Debug)]
 pub struct UBXSecSig {
     pub version: u8,
-    pub jam_flags: u8,
-    pub spf_flags: u8,
+    pub jam_det_enabled: bool,
+    pub jam_state: u8,
+    pub spf_det_enabled: bool,
+    pub spf_state: u8,
+    pub jam_num_cent_freqs: u8,
+    pub jam_state_cent_freqs: Vec<UBXSecSigJamStateCentFreq>,
+}
+
+#[derive(Debug)]
+pub struct UBXSecSigJamStateCentFreq {
+    pub cent_freq: u32,
+    pub jammed: bool,
 }
 
 #[derive(Debug)]
@@ -532,7 +543,7 @@ pub fn decode_ubx_nav_hpposecef_msg(data: &[u8]) -> Result<UBXNavHPPosECEF> {
     let ecef_y_hp = payload[21] as i8;
     let ecef_z_hp = payload[22] as i8;
 
-    let invalid_ecef = payload[23];
+    let invalid_ecef = payload[23] & 0x01;
     let p_acc = get_u32_from_le_byte_array(payload, 24);
 
     Ok(UBXNavHPPosECEF {
@@ -554,7 +565,7 @@ pub fn decode_ubx_nav_hpposllh_msg(data: &[u8]) -> Result<UBXNavHPPosLLH> {
     ensure_payload_len(payload, NAV_HPPOSLLH_LENGTH, "nav-hpposllh")?;
 
     let version = payload[0];
-    let invalid_llh = payload[1];
+    let invalid_llh = payload[3] & 0x01;
     let itow = get_u32_from_le_byte_array(payload, 4);
     let lon = get_i32_from_le_byte_array(payload, 8);
     let lat = get_i32_from_le_byte_array(payload, 12);
@@ -692,19 +703,23 @@ pub fn decode_ubx_nav_relposned(data: &[u8]) -> Result<UBXNavRelPosNed> {
     let version = payload[0];
     let ref_station_id = get_u16_from_le_byte_array(payload, 2);
     let itow = get_u32_from_le_byte_array(payload, 4);
-    let rel_pos_n = get_i32_from_le_byte_array(payload, 8) as f32; // unit [cm]
-    let rel_pos_e = get_i32_from_le_byte_array(payload, 12) as f32; // unit [cm]
-    let rel_pos_d = get_i32_from_le_byte_array(payload, 16) as f32; // unit [cm]
-    let rel_pos_length = get_u32_from_le_byte_array(payload, 20) as f32; // unit [cm]
+    let rel_pos_n_cm = get_i32_from_le_byte_array(payload, 8) as f32;
+    let rel_pos_e_cm = get_i32_from_le_byte_array(payload, 12) as f32;
+    let rel_pos_d_cm = get_i32_from_le_byte_array(payload, 16) as f32;
+    let rel_pos_length_cm = get_i32_from_le_byte_array(payload, 20) as f32;
     let rel_pos_heading = (get_i32_from_le_byte_array(payload, 24) as f32) * 1e-5; // unit [deg]
-    let rel_pos_hpn = payload[32] as i8; // unit [mm]
-    let rel_pos_hpe = payload[33] as i8; // unit [mm]
-    let rel_pos_hpd = payload[34] as i8; // unit [mm]
-    let rel_pos_hp_length = payload[35] as i8; // unit [mm]
-    let acc_n = get_u32_from_le_byte_array(payload, 36); // unit [mm]
-    let acc_e = get_u32_from_le_byte_array(payload, 40); // unit [mm]
-    let acc_d = get_u32_from_le_byte_array(payload, 44); // unit [mm]
-    let acc_length = get_u32_from_le_byte_array(payload, 48); // unit [mm]
+    let rel_pos_hpn = payload[32] as i8;
+    let rel_pos_hpe = payload[33] as i8;
+    let rel_pos_hpd = payload[34] as i8;
+    let rel_pos_hp_length = payload[35] as i8;
+    let rel_pos_n = rel_pos_n_cm * 1e-2 + rel_pos_hpn as f32 * 1e-4;
+    let rel_pos_e = rel_pos_e_cm * 1e-2 + rel_pos_hpe as f32 * 1e-4;
+    let rel_pos_d = rel_pos_d_cm * 1e-2 + rel_pos_hpd as f32 * 1e-4;
+    let rel_pos_length = rel_pos_length_cm * 1e-2 + rel_pos_hp_length as f32 * 1e-4;
+    let acc_n = get_u32_from_le_byte_array(payload, 36) as f32 * 1e-4;
+    let acc_e = get_u32_from_le_byte_array(payload, 40) as f32 * 1e-4;
+    let acc_d = get_u32_from_le_byte_array(payload, 44) as f32 * 1e-4;
+    let acc_length = get_u32_from_le_byte_array(payload, 48) as f32 * 1e-4;
     let acc_heading = get_u32_from_le_byte_array(payload, 52) as f32 * 1e-5; // unit [deg]
     let flags = &payload[60..60 + 4];
     let gnss_fix_ok = flags[0] & 1;
@@ -1076,13 +1091,13 @@ pub fn decode_ubx_mon_hw3_msg(data: &[u8]) -> Result<UBXMonHw3> {
     for n in 0..n_pins {
         let offset = MON_HW3_HEADER_LENGTH + n * MON_HW3_PIN_LENGTH;
         pins.push(UBXMonHw3Pin {
-            pin_id: payload[offset],
-            pin_mask: get_u16_from_le_byte_array(payload, offset + 1),
-            vp: payload[offset + 3],
+            pin_id: payload[offset + 1],
+            pin_mask: get_u16_from_le_byte_array(payload, offset + 2),
+            vp: payload[offset + 4],
         });
     }
 
-    let hw_version = String::from_utf8_lossy(&payload[4..12])
+    let hw_version = String::from_utf8_lossy(&payload[3..13])
         .trim_end_matches(char::from(0))
         .to_string();
 
@@ -1114,13 +1129,13 @@ pub fn decode_ubx_mon_rf_msg(data: &[u8]) -> Result<UBXMonRf> {
             ant_status: payload[offset + 2],
             ant_power: payload[offset + 3],
             post_status: get_u32_from_le_byte_array(payload, offset + 4),
-            noise_per_ms: get_u16_from_le_byte_array(payload, offset + 8),
-            agc_cnt: get_u16_from_le_byte_array(payload, offset + 10),
-            cw_suppression: payload[offset + 12],
-            ofs_i: payload[offset + 13] as i8,
-            mag_i: payload[offset + 14],
-            ofs_q: payload[offset + 15] as i8,
-            mag_q: payload[offset + 16],
+            noise_per_ms: get_u16_from_le_byte_array(payload, offset + 12),
+            agc_cnt: get_u16_from_le_byte_array(payload, offset + 14),
+            cw_suppression: payload[offset + 16],
+            ofs_i: payload[offset + 17] as i8,
+            mag_i: payload[offset + 18],
+            ofs_q: payload[offset + 19] as i8,
+            mag_q: payload[offset + 20],
         });
     }
 
@@ -1162,12 +1177,33 @@ pub fn decode_ubx_mon_span_msg(data: &[u8]) -> Result<UBXMonSpan> {
 
 pub fn decode_ubx_sec_sig_msg(data: &[u8]) -> Result<UBXSecSig> {
     let payload = checked_ubx_payload(data)?;
-    ensure_payload_len(payload, SEC_SIG_LENGTH, "sec-sig")?;
+    ensure_payload_len(payload, SEC_SIG_HEADER_LENGTH, "sec-sig")?;
+
+    let jam_num_cent_freqs = payload[3];
+    let payload_len = SEC_SIG_HEADER_LENGTH
+        .checked_add(jam_num_cent_freqs as usize * SEC_SIG_CENT_FREQ_LENGTH)
+        .ok_or_else(|| anyhow::anyhow!("sec-sig center frequency length overflow"))?;
+    ensure_payload_len(payload, payload_len, "sec-sig")?;
+
+    let sig_sec_flags = payload[1];
+    let mut jam_state_cent_freqs = Vec::with_capacity(jam_num_cent_freqs as usize);
+    for n in 0..jam_num_cent_freqs as usize {
+        let offset = SEC_SIG_HEADER_LENGTH + n * SEC_SIG_CENT_FREQ_LENGTH;
+        let jam_state_cent_freq = get_u32_from_le_byte_array(payload, offset);
+        jam_state_cent_freqs.push(UBXSecSigJamStateCentFreq {
+            cent_freq: jam_state_cent_freq & 0x00ff_ffff,
+            jammed: jam_state_cent_freq & (1 << 24) != 0,
+        });
+    }
 
     Ok(UBXSecSig {
         version: payload[0],
-        jam_flags: payload[4],
-        spf_flags: payload[8],
+        jam_det_enabled: sig_sec_flags & 0x01 != 0,
+        jam_state: (sig_sec_flags >> 1) & 0x03,
+        spf_det_enabled: sig_sec_flags & 0x08 != 0,
+        spf_state: (sig_sec_flags >> 4) & 0x07,
+        jam_num_cent_freqs,
+        jam_state_cent_freqs,
     })
 }
 
@@ -1488,18 +1524,38 @@ mod tests {
     fn test_parse_mon_and_sec_messages() {
         let mut hw3_payload = vec![0; MON_HW3_HEADER_LENGTH + MON_HW3_PIN_LENGTH];
         hw3_payload[1] = 1;
-        hw3_payload[4..8].copy_from_slice(b"HW3\0");
-        hw3_payload[12] = 7;
+        hw3_payload[3..7].copy_from_slice(b"HW3\0");
+        hw3_payload[MON_HW3_HEADER_LENGTH + 1] = 7;
+        hw3_payload[MON_HW3_HEADER_LENGTH + 2..MON_HW3_HEADER_LENGTH + 4]
+            .copy_from_slice(&0x1234u16.to_le_bytes());
+        hw3_payload[MON_HW3_HEADER_LENGTH + 4] = 8;
         let hw3 = decode_ubx_mon_hw3_msg(&ubx_frame(0x0A, 0x37, &hw3_payload)).unwrap();
         assert_eq!(hw3.n_pins, 1);
+        assert_eq!(hw3.hw_version, "HW3");
         assert_eq!(hw3.pins[0].pin_id, 7);
+        assert_eq!(hw3.pins[0].pin_mask, 0x1234);
+        assert_eq!(hw3.pins[0].vp, 8);
 
         let mut rf_payload = vec![0; MON_RF_HEADER_LENGTH + MON_RF_BLOCK_LENGTH];
         rf_payload[1] = 1;
         rf_payload[4] = 2;
+        rf_payload[16..18].copy_from_slice(&0x1234u16.to_le_bytes());
+        rf_payload[18..20].copy_from_slice(&0x5678u16.to_le_bytes());
+        rf_payload[20] = 9;
+        rf_payload[21] = -10i8 as u8;
+        rf_payload[22] = 11;
+        rf_payload[23] = -12i8 as u8;
+        rf_payload[24] = 13;
         let rf = decode_ubx_mon_rf_msg(&ubx_frame(0x0A, 0x38, &rf_payload)).unwrap();
         assert_eq!(rf.n_blocks, 1);
         assert_eq!(rf.blocks[0].block_id, 2);
+        assert_eq!(rf.blocks[0].noise_per_ms, 0x1234);
+        assert_eq!(rf.blocks[0].agc_cnt, 0x5678);
+        assert_eq!(rf.blocks[0].cw_suppression, 9);
+        assert_eq!(rf.blocks[0].ofs_i, -10);
+        assert_eq!(rf.blocks[0].mag_i, 11);
+        assert_eq!(rf.blocks[0].ofs_q, -12);
+        assert_eq!(rf.blocks[0].mag_q, 13);
 
         let mut span_payload = vec![0; MON_SPAN_HEADER_LENGTH + MON_SPAN_BLOCK_LENGTH];
         span_payload[1] = 1;
@@ -1508,20 +1564,86 @@ mod tests {
         assert_eq!(span.num_rf_blocks, 1);
         assert_eq!(span.blocks[0].spectrum[0], 99);
 
-        let mut sig_payload = vec![0; SEC_SIG_LENGTH];
-        sig_payload[4] = 3;
-        sig_payload[8] = 4;
+        let mut sig_payload = vec![0; SEC_SIG_HEADER_LENGTH + 2 * SEC_SIG_CENT_FREQ_LENGTH];
+        sig_payload[0] = 2;
+        sig_payload[1] = 0b0011_1101;
+        sig_payload[3] = 2;
+        sig_payload[4..8].copy_from_slice(&(1_575_420u32 | (1 << 24)).to_le_bytes());
+        sig_payload[8..12].copy_from_slice(&1_227_600u32.to_le_bytes());
         let sig = decode_ubx_sec_sig_msg(&ubx_frame(0x27, 0x09, &sig_payload)).unwrap();
-        assert_eq!(sig.jam_flags, 3);
-        assert_eq!(sig.spf_flags, 4);
+        assert_eq!(sig.version, 2);
+        assert!(sig.jam_det_enabled);
+        assert_eq!(sig.jam_state, 2);
+        assert!(sig.spf_det_enabled);
+        assert_eq!(sig.spf_state, 3);
+        assert_eq!(sig.jam_num_cent_freqs, 2);
+        assert_eq!(sig.jam_state_cent_freqs[0].cent_freq, 1_575_420);
+        assert!(sig.jam_state_cent_freqs[0].jammed);
+        assert_eq!(sig.jam_state_cent_freqs[1].cent_freq, 1_227_600);
+        assert!(!sig.jam_state_cent_freqs[1].jammed);
 
         let mut siglog_payload = vec![0; SEC_SIGLOG_HEADER_LENGTH + SEC_SIGLOG_EVENT_LENGTH];
         siglog_payload[1] = 1;
         siglog_payload[8..12].copy_from_slice(&55u32.to_le_bytes());
         siglog_payload[12] = 6;
+        siglog_payload[13] = 3;
         let siglog = decode_ubx_sec_siglog_msg(&ubx_frame(0x27, 0x10, &siglog_payload)).unwrap();
         assert_eq!(siglog.num_events, 1);
         assert_eq!(siglog.events[0].time_elapsed, 55);
         assert_eq!(siglog.events[0].detection_type, 6);
+        assert_eq!(siglog.events[0].event_type, 3);
+    }
+
+    #[test]
+    fn test_parse_sec_sig_without_center_frequencies() {
+        let payload = [2, 0, 0, 0];
+        let sig = decode_ubx_sec_sig_msg(&ubx_frame(0x27, 0x09, &payload)).unwrap();
+
+        assert_eq!(sig.jam_num_cent_freqs, 0);
+        assert!(sig.jam_state_cent_freqs.is_empty());
+    }
+
+    #[test]
+    fn test_sec_sig_rejects_truncated_header() {
+        let result = decode_ubx_sec_sig_msg(&ubx_frame(0x27, 0x09, &[2, 0, 0]));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sec_sig_rejects_truncated_center_frequencies() {
+        let result = decode_ubx_sec_sig_msg(&ubx_frame(0x27, 0x09, &[2, 0, 0, 1]));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hppos_flags_use_documented_bits() {
+        let mut ecef_payload = vec![0; NAV_HPPOSECEF_LENGTH];
+        ecef_payload[23] = 0b1111_1110;
+        let ecef = decode_ubx_nav_hpposecef_msg(&ubx_frame(0x01, 0x13, &ecef_payload)).unwrap();
+        assert_eq!(ecef.invalid_ecef, 0);
+
+        let mut llh_payload = vec![0; NAV_HPPOSLLH_LENGTH];
+        llh_payload[1] = 1;
+        llh_payload[3] = 1;
+        let llh = decode_ubx_nav_hpposllh_msg(&ubx_frame(0x01, 0x14, &llh_payload)).unwrap();
+        assert_eq!(llh.invalid_llh, 1);
+    }
+
+    #[test]
+    fn test_relposned_applies_high_precision_and_scales_to_si_units() {
+        let mut payload = vec![0; NAV_RELPOSNED_LENGTH];
+        payload[8..12].copy_from_slice(&123i32.to_le_bytes());
+        payload[12..16].copy_from_slice(&(-123i32).to_le_bytes());
+        payload[20..24].copy_from_slice(&(-50i32).to_le_bytes());
+        payload[32] = 45;
+        payload[33] = -45i8 as u8;
+        payload[35] = 25;
+        payload[36..40].copy_from_slice(&12_345u32.to_le_bytes());
+
+        let relpos = decode_ubx_nav_relposned(&ubx_frame(0x01, 0x3c, &payload)).unwrap();
+        assert!((relpos.rel_pos_n - 1.2345).abs() < 1e-6);
+        assert!((relpos.rel_pos_e + 1.2345).abs() < 1e-6);
+        assert!((relpos.rel_pos_length + 0.4975).abs() < 1e-6);
+        assert!((relpos.acc_n - 1.2345).abs() < 1e-6);
     }
 }
