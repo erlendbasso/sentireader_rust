@@ -1,8 +1,10 @@
-use crate::logging_reader::LoggingReader;
+use crate::logging_reader::{LoggingReader, LoggingStats};
 use crate::utils::*;
 use std::error;
 use std::io::Read;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
@@ -17,6 +19,21 @@ const TOT_LENGTH: usize = 4;
 const SENTIBOARD_TIMING_LENGTH: usize = TOV_LENGTH + TOA_LENGTH + TOT_LENGTH;
 const BUF_SIZE: usize = 512;
 const SENTIBOARD_MAX_SKIP: usize = 512;
+
+#[derive(Default)]
+pub struct ReaderStats {
+    valid_frames: AtomicU64,
+    resync_bytes: AtomicU64,
+}
+
+impl ReaderStats {
+    pub fn valid_frames(&self) -> u64 {
+        self.valid_frames.load(Ordering::Relaxed)
+    }
+    pub fn resync_bytes(&self) -> u64 {
+        self.resync_bytes.load(Ordering::Relaxed)
+    }
+}
 
 #[derive(Clone)]
 pub struct SentiboardMessage {
@@ -41,12 +58,14 @@ pub struct SentiReader {
     sentiboard_data: Vec<u8>,
     protocol_version: u8,
     has_onboard_timestamp: bool,
+    stats: Arc<ReaderStats>,
+    logging_stats: Option<Arc<LoggingStats>>,
 }
 
 impl SentiReader {
     pub fn new(port_name: String, baud_rate: u32) -> SentiReader {
         let port = serialport::new(port_name, baud_rate)
-            .timeout(Duration::from_secs_f32(1000.0))
+            .timeout(Duration::from_secs(1))
             .open()
             .expect("Port should have opened.");
 
@@ -61,12 +80,26 @@ impl SentiReader {
     where
         P: AsRef<Path>,
     {
-        let port = serialport::new(port_name.into(), baud_rate)
-            .timeout(Duration::from_secs_f32(1000.0))
-            .open()
-            .expect("Port should have opened.");
+        Self::try_new_with_session_log(port_name, baud_rate, log_dir)
+            .expect("Port should have opened.")
+    }
 
-        Self::from_reader(LoggingReader::new_session_log(port, log_dir))
+    pub fn try_new_with_session_log<P>(
+        port_name: impl Into<String>,
+        baud_rate: u32,
+        log_dir: Option<P>,
+    ) -> Result<SentiReader>
+    where
+        P: AsRef<Path>,
+    {
+        let port = serialport::new(port_name.into(), baud_rate)
+            .timeout(Duration::from_secs(1))
+            .open()?;
+        let logging_reader = LoggingReader::new_session_log(port, log_dir);
+        let logging_stats = logging_reader.stats();
+        let mut reader = Self::from_reader(logging_reader);
+        reader.logging_stats = Some(logging_stats);
+        Ok(reader)
     }
 
     pub fn from_reader<R>(reader: R) -> SentiReader
@@ -80,7 +113,16 @@ impl SentiReader {
             protocol_version: 0,
             has_onboard_timestamp: false,
             sentiboard_data: vec![0; BUF_SIZE],
+            stats: Arc::new(ReaderStats::default()),
+            logging_stats: None,
         }
+    }
+
+    pub fn stats(&self) -> Arc<ReaderStats> {
+        self.stats.clone()
+    }
+    pub fn logging_stats(&self) -> Option<Arc<LoggingStats>> {
+        self.logging_stats.clone()
     }
 
     fn compare_header_checksum(&self) -> Result<()> {
@@ -107,6 +149,7 @@ impl SentiReader {
         self.reader.read_exact(buffer.as_mut_slice())?;
 
         while buffer[0] as char != '^' || !(buffer[1] as char == 'B' || buffer[1] as char == 'C') {
+            self.stats.resync_bytes.fetch_add(1, Ordering::Relaxed);
             max_skip -= 1;
             if max_skip == 0 {
                 Err("Zero max_skip.")?;
@@ -152,7 +195,10 @@ impl SentiReader {
 
         self.serial_buf.append(&mut header_buffer);
 
-        self.compare_header_checksum()?;
+        self.compare_header_checksum()
+            .map_err(|error| -> Box<dyn error::Error> {
+                format!("Header checksum error: {error}").into()
+            })?;
 
         self.data_length = get_u16_from_byte_array(&self.serial_buf, 2);
         sentiboard_msg.sensor_id = Some(self.serial_buf[4]);
@@ -178,7 +224,12 @@ impl SentiReader {
         self.sentiboard_data =
             self.serial_buf[HEADER_SIZE..(self.data_length as usize + HEADER_SIZE)].to_vec();
 
-        self.compare_data_checksum()?;
+        self.compare_data_checksum()
+            .map_err(|error| -> Box<dyn error::Error> {
+                format!("Data checksum error: {error}").into()
+            })?;
+
+        self.stats.valid_frames.fetch_add(1, Ordering::Relaxed);
 
         Ok(sentiboard_msg)
     }

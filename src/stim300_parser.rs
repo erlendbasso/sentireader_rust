@@ -102,9 +102,19 @@ pub fn parse_stim300_data(data: &[u8]) -> Result<IMUMessage> {
         .into());
     }
     let (imu_mode, data_length, num_crc_dummy_bytes) = get_data_information(data[0])?;
+    if data.len() < data_length {
+        return Err(format!(
+            "Data length is too short for {:?} mode: {} bytes, expected at least {} bytes",
+            imu_mode,
+            data.len(),
+            data_length
+        )
+        .into());
+    }
 
-    let computed_checksum = compute_checksum(data, data_length, num_crc_dummy_bytes);
-    let received_checksum = get_received_checksum(data, data_length);
+    let packet = &data[..data_length];
+    let computed_checksum = compute_checksum(packet, data_length, num_crc_dummy_bytes);
+    let received_checksum = get_received_checksum(packet, data_length);
     let check_result = compare_checksums(computed_checksum, received_checksum);
 
     match check_result {
@@ -475,5 +485,27 @@ mod tests {
         let err = parse_stim300_data(&[]).unwrap_err();
 
         assert!(err.to_string().contains("Data length is too short"));
+    }
+
+    #[test]
+    fn unsupported_mode_returns_error_without_panicking() {
+        let err = parse_stim300_data(&[0xff; MIN_DATA_LENGTH]).unwrap_err();
+        assert!(err.to_string().contains("Mode"));
+    }
+
+    #[test]
+    fn truncated_mode_specific_frame_returns_error_without_panicking() {
+        let mut data = vec![0; MIN_DATA_LENGTH];
+        data[0] = 0x93;
+        let err = parse_stim300_data(&data).unwrap_err();
+        assert!(err.to_string().contains("expected at least 38"));
+    }
+
+    #[test]
+    fn corrupt_crc_returns_error() {
+        let mut data = vec![0; 28];
+        data[0] = 0x91;
+        let err = parse_stim300_data(&data).unwrap_err();
+        assert!(err.to_string().contains("checksum"));
     }
 }
