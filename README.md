@@ -48,8 +48,8 @@ selection belong to `blueboat_sentinode`.
 
 ## Sentiboard counter mapping
 
-The library's `timesync::TimeSync` maps the free-running 100 MHz Sentiboard
-counter into a synthetic time domain:
+The library's `sentiboard_clock::SentiboardClock` maps the free-running 100 MHz
+Sentiboard counter into a synthetic time domain:
 
 - one counter tick is 10 ns;
 - the first OC7/PPS rising edge after process startup becomes synthetic Unix
@@ -73,12 +73,13 @@ stateDiagram-v2
     CounterFault --> Unanchored: Process restart
 ```
 
-Before the first OC7 edge, `absolute_time()` returns `None`. In `Running`, it
+Before the first OC7 edge, `counter_to_time()` returns `None`. In `Running`, it
 returns the synthetic epoch plus the unwrapped tick offset. A process restart
 creates a new synthetic epoch, so timestamps from different runs are not
 directly comparable without an additional run or epoch identifier.
 
-GNSS, host realtime, PTP, and NTP are intentionally not inputs to `TimeSync`.
+GNSS, host realtime, PTP, and NTP are intentionally not inputs to
+`SentiboardClock`.
 The separate GNSS relationship, timestamp publication rules, chronology
 limitations, and external-computer synchronization procedure are canonical in
 the [Sentiboard timing implementation document](../blueboat_sentinode/impl_doc.md).
