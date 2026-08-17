@@ -6,12 +6,14 @@ const PPS_PERIOD_TICKS: u32 = 100_000_000;
 const PPS_STALE_AFTER: StdDuration = StdDuration::from_millis(2500);
 const PPS_JITTER_WINDOW: usize = 16;
 const MAX_FORWARD_DELTA_TICKS: u32 = 1_000_000_000; // 10 s at 100 MHz
+const PPS_ACQUISITION_TOLERANCE_TICKS: u32 = 1_000_000; // 1 000 000 * 10ns = 10 ms = 1% of 1 s
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SentiboardClockState {
     Unanchored = 0,
-    Running = 1,
-    CounterFault = 2,
+    Acquiring = 1,
+    Running = 2,
+    CounterFault = 3,
 }
 
 impl SentiboardClockState {
@@ -40,6 +42,7 @@ pub struct SentiboardClock {
     last_pps_interval_ticks: Option<u32>,
     pps_interval_errors: Vec<i32>,
     message: String,
+    candidate_pps: Option<u32>,
 }
 
 impl Default for SentiboardClock {
@@ -54,6 +57,7 @@ impl Default for SentiboardClock {
             last_pps_interval_ticks: None,
             pps_interval_errors: Vec::with_capacity(PPS_JITTER_WINDOW),
             message: "Waiting for first independent OC7 rising edge".into(),
+            candidate_pps: None,
         }
     }
 }
@@ -96,17 +100,32 @@ impl SentiboardClock {
     /// The first OC7 edge defines synthetic Unix epoch. Later edges are
     /// diagnostics only and never alter the active mapping.
     pub fn observe_pps(&mut self, raw: u32) {
-        if self.anchor_counter.is_none() {
-            // Startup must be atomic: buffered sensor packets may carry event
-            // counters on either side of this edge, but none of them is
-            // allowed to establish or fault the epoch before OC7 does.
-            self.last_raw_counter = Some(raw);
-            self.last_unwrapped_counter = Some(u64::from(raw));
-            self.anchor_counter = Some(u64::from(raw));
-            self.state = SentiboardClockState::Running;
-            self.latest_pps_toa = Some(raw);
-            self.last_pps_seen = Some(Instant::now());
-            self.message = "Sentiboard clock anchored at first OC7 edge".into();
+        if self.state == SentiboardClockState::CounterFault {
+            return;
+        }
+
+        if self.state != SentiboardClockState::Running {
+            match self.candidate_pps {
+                None => {
+                    self.candidate_pps = Some(raw);
+                    self.state = SentiboardClockState::Acquiring;
+                    self.message = "Waiting for a second independent OC7 rising edge".into();
+                }
+
+                Some(previous) => {
+                    let interval = raw.wrapping_sub(previous);
+                    let error = i64::from(interval) - i64::from(PPS_PERIOD_TICKS);
+                    
+                    if error.unsigned_abs() <= u64::from(PPS_ACQUISITION_TOLERANCE_TICKS) {
+                        self.anchor_at(raw);
+                    } else {
+                        self.candidate_pps = Some(raw);
+                        self.message = format!(
+                            "Second OC7 edge is not within tolerance: {error} ticks error"
+                        );
+                    }
+                }
+            }
             return;
         }
 
@@ -140,6 +159,10 @@ impl SentiboardClock {
     }
     pub fn state(&self) -> SentiboardClockState {
         self.state
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
     }
 
     pub fn timing_status_snapshot(&self) -> SentiboardTimingStatusSnapshot {
@@ -195,6 +218,17 @@ impl SentiboardClock {
             / self.pps_interval_errors.len() as f64;
         variance.sqrt()
     }
+
+    fn anchor_at(&mut self, raw: u32) {
+        self.anchor_counter = Some(u64::from(raw));
+        self.last_raw_counter = Some(raw);
+        self.last_unwrapped_counter = Some(u64::from(raw));
+        self.latest_pps_toa = Some(raw);
+        self.last_pps_seen = Some(Instant::now());
+        self.candidate_pps = None;
+        self.state = SentiboardClockState::Running;
+        self.message = "Sentiboard clock anchored at second OC7 edge".into(); 
+    }
 }
 
 fn counter_delta(value: u32, reference: u32) -> i32 {
@@ -207,6 +241,8 @@ fn unix_epoch() -> NaiveDateTime {
         .and_hms_opt(0, 0, 0)
         .unwrap()
 }
+
+
 
 #[cfg(test)]
 mod tests {
