@@ -97,7 +97,8 @@ impl SentiboardClock {
         self.last_raw_counter = Some(raw);
     }
 
-    /// The first OC7 edge defines synthetic Unix epoch. Later edges are
+    /// Two consecutive OC7 edges acquire the clock. The second accepted edge
+    /// defines the synthetic epoch at 2000-01-01T00:00:00. Later edges are
     /// diagnostics only and never alter the active mapping.
     pub fn observe_pps(&mut self, raw: u32) {
         if self.state == SentiboardClockState::CounterFault {
@@ -115,14 +116,13 @@ impl SentiboardClock {
                 Some(previous) => {
                     let interval = raw.wrapping_sub(previous);
                     let error = i64::from(interval) - i64::from(PPS_PERIOD_TICKS);
-                    
+
                     if error.unsigned_abs() <= u64::from(PPS_ACQUISITION_TOLERANCE_TICKS) {
                         self.anchor_at(raw);
                     } else {
                         self.candidate_pps = Some(raw);
-                        self.message = format!(
-                            "Second OC7 edge is not within tolerance: {error} ticks error"
-                        );
+                        self.message =
+                            format!("Second OC7 edge is not within tolerance: {error} ticks error");
                     }
                 }
             }
@@ -151,7 +151,7 @@ impl SentiboardClock {
         let ticks = i128::from(counter) - i128::from(anchor);
         let ns = ticks.checked_mul(i128::from(UNIT_NS))?;
         let ns = i64::try_from(ns).ok()?;
-        Some(unix_epoch() + Duration::nanoseconds(ns))
+        Some(synthetic_epoch() + Duration::nanoseconds(ns))
     }
 
     pub fn is_anchored(&self) -> bool {
@@ -227,7 +227,7 @@ impl SentiboardClock {
         self.last_pps_seen = Some(Instant::now());
         self.candidate_pps = None;
         self.state = SentiboardClockState::Running;
-        self.message = "Sentiboard clock anchored at second OC7 edge".into(); 
+        self.message = "Sentiboard clock anchored at second OC7 edge".into();
     }
 }
 
@@ -235,18 +235,28 @@ fn counter_delta(value: u32, reference: u32) -> i32 {
     value.wrapping_sub(reference) as i32
 }
 
-fn unix_epoch() -> NaiveDateTime {
-    NaiveDate::from_ymd_opt(1970, 1, 1)
+fn synthetic_epoch() -> NaiveDateTime {
+    NaiveDate::from_ymd_opt(2000, 1, 1)
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap()
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn acquire_clock(first_edge: u32) -> (SentiboardClock, u32) {
+        let mut clock = SentiboardClock::new();
+        clock.observe_pps(first_edge);
+        assert_eq!(clock.state(), SentiboardClockState::Acquiring);
+        assert!(clock.counter_to_time(first_edge).is_none());
+
+        let anchor_edge = first_edge.wrapping_add(PPS_PERIOD_TICKS);
+        clock.observe_pps(anchor_edge);
+        assert_eq!(clock.state(), SentiboardClockState::Running);
+        (clock, anchor_edge)
+    }
 
     #[test]
     fn unavailable_before_first_oc7() {
@@ -256,47 +266,57 @@ mod tests {
     }
 
     #[test]
-    fn first_oc7_is_unix_epoch_and_never_reanchors() {
+    fn second_oc7_is_synthetic_epoch_and_never_reanchors() {
         let mut clock = SentiboardClock::new();
         clock.observe_pps(100);
-        assert_eq!(clock.counter_to_time(100), Some(unix_epoch()));
+        assert_eq!(clock.state(), SentiboardClockState::Acquiring);
+        assert!(clock.counter_to_time(100).is_none());
+
         clock.observe_pps(100 + PPS_PERIOD_TICKS);
         assert_eq!(
             clock.counter_to_time(100 + PPS_PERIOD_TICKS),
-            Some(unix_epoch() + Duration::seconds(1))
+            Some(synthetic_epoch())
+        );
+        clock.observe_pps(100 + 2 * PPS_PERIOD_TICKS);
+        assert_eq!(
+            clock.counter_to_time(100 + 2 * PPS_PERIOD_TICKS),
+            Some(synthetic_epoch() + Duration::seconds(1))
         );
     }
 
     #[test]
     fn unwraps_counter_rollover() {
-        let mut clock = SentiboardClock::new();
-        clock.observe_pps(u32::MAX - 4);
-        clock.observe_counter(5);
+        let (mut clock, anchor) = acquire_clock(u32::MAX - 50_000_000);
+        let after_wrap = anchor.wrapping_add(10);
+        clock.observe_counter(after_wrap);
         assert_eq!(
-            clock.counter_to_time(5),
-            Some(unix_epoch() + Duration::nanoseconds(100))
+            clock.counter_to_time(after_wrap),
+            Some(synthetic_epoch() + Duration::nanoseconds(100))
         );
     }
 
     #[test]
     fn reports_implausible_counter_jump_without_reanchoring() {
-        let mut clock = SentiboardClock::new();
-        clock.observe_pps(10);
-        clock.observe_counter(10 + MAX_FORWARD_DELTA_TICKS + 1);
+        let (mut clock, anchor) = acquire_clock(10);
+        clock.observe_counter(anchor.wrapping_add(MAX_FORWARD_DELTA_TICKS + 1));
         assert_eq!(clock.state(), SentiboardClockState::CounterFault);
-        assert!(clock.counter_to_time(20).is_none());
+        assert!(clock.counter_to_time(anchor).is_none());
     }
 
     #[test]
     fn tolerates_recent_out_of_order_capture() {
-        let mut clock = SentiboardClock::new();
-        clock.observe_counter(1_000);
-        clock.observe_pps(900);
-        assert_eq!(clock.state(), SentiboardClockState::Running);
-        assert_eq!(clock.counter_to_time(900), Some(unix_epoch()));
+        let (mut clock, anchor) = acquire_clock(900);
+        let latest = anchor.wrapping_add(100);
+        let older = anchor.wrapping_add(50);
+        clock.observe_counter(latest);
+        clock.observe_counter(older);
         assert_eq!(
-            clock.counter_to_time(1_000),
-            Some(unix_epoch() + Duration::nanoseconds(1_000))
+            clock.counter_to_time(older),
+            Some(synthetic_epoch() + Duration::nanoseconds(500))
+        );
+        assert_eq!(
+            clock.counter_to_time(latest),
+            Some(synthetic_epoch() + Duration::nanoseconds(1_000))
         );
     }
 }

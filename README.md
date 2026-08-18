@@ -52,8 +52,8 @@ The library's `sentiboard_clock::SentiboardClock` maps the free-running 100 MHz
 Sentiboard counter into a synthetic time domain:
 
 - one counter tick is 10 ns;
-- the first OC7/PPS rising edge after process startup becomes synthetic Unix
-  epoch `1970-01-01T00:00:00`;
+- two consecutive OC7/PPS rising edges acquire the clock, and the second
+  accepted edge becomes synthetic epoch `2000-01-01T00:00:00`;
 - the raw 32-bit counter is unwrapped into an internal 64-bit counter;
 - natural rollover is accepted, and recent negative deltas do not move the
   unwrap cursor backward;
@@ -67,16 +67,18 @@ The externally visible states are:
 ```mermaid
 stateDiagram-v2
     [*] --> Unanchored: Process startup
-    Unanchored --> Running: First OC7 rising edge
+    Unanchored --> Acquiring: First OC7 rising edge
+    Acquiring --> Running: Second edge within tolerance
+    Acquiring --> Acquiring: Replace invalid second-edge candidate
     Running --> Running: Valid observations and PPS edges
     Running --> CounterFault: Forward counter jump over 10 seconds
     CounterFault --> Unanchored: Process restart
 ```
 
-Before the first OC7 edge, `counter_to_time()` returns `None`. In `Running`, it
-returns the synthetic epoch plus the unwrapped tick offset. A process restart
-creates a new synthetic epoch, so timestamps from different runs are not
-directly comparable without an additional run or epoch identifier.
+Until the second accepted OC7 edge, `counter_to_time()` returns `None`. In
+`Running`, it returns the synthetic epoch plus the unwrapped tick offset. A
+process restart creates a new synthetic epoch, so timestamps from different
+runs are not directly comparable without an additional run or epoch identifier.
 
 GNSS, host realtime, PTP, and NTP are intentionally not inputs to
 `SentiboardClock`.
