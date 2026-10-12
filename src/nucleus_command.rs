@@ -18,7 +18,8 @@ pub struct NucleusConfig {
     pub instrument_name: String,
     pub serial_number: u32,
     pub firmware: String,
-    /// `SETMISSION,POFF`, subtracted from the reported pressure (p. 56).
+    /// `SETMISSION,POFF` in dbar. The unit reports the measured pressure
+    /// minus this offset, in bar (p. 56, p. 91).
     pub pressure_offset_dbar: f32,
     /// `SETMISSION,SV`. 0.0 means the unit uses measured sound velocity.
     pub sound_velocity_setting_m_s: f32,
