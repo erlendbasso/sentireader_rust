@@ -70,6 +70,12 @@ pub enum NucleusCommandError {
     Forbidden {
         command: String,
     },
+    /// The power-on banner (p. 14) arrived while the client waited for the
+    /// reply to `command`. The unit restarted in command state and did not
+    /// execute the command.
+    Restarted {
+        command: String,
+    },
     /// `START` failed. The Nucleus can still be stopped.
     NotRestarted {
         start_error: Box<NucleusCommandError>,
@@ -93,6 +99,12 @@ impl fmt::Display for NucleusCommandError {
                 write!(f, "unexpected reply to {command}: {reply:?}")
             }
             Self::Forbidden { command } => write!(f, "refused to send {command}"),
+            Self::Restarted { command } => {
+                write!(
+                    f,
+                    "the Nucleus restarted while {command} waited for a reply"
+                )
+            }
             Self::NotRestarted {
                 start_error,
                 query_error,
@@ -118,6 +130,9 @@ impl From<io::Error> for NucleusCommandError {
     }
 }
 
+/// Start of the first power-on banner line, `Nortek Nucleus1000` (p. 14).
+const BANNER_PREFIX: &str = "Nortek ";
+
 /// Most lines and characters per line that a timeout error keeps.
 const MAX_RECEIVED_LINES: usize = 8;
 const MAX_RECEIVED_LINE_CHARS: usize = 120;
@@ -135,7 +150,10 @@ enum Terminator {
 /// Stop the Nucleus, read its configuration, and start it again.
 ///
 /// `START` is sent even when a query step fails. If `START` fails, the
-/// result is [`NucleusCommandError::NotRestarted`]. The transport should
+/// result is [`NucleusCommandError::NotRestarted`]. A power-on banner in
+/// place of a reply means that the unit restarted and lost the command:
+/// after `STOP` the query continues, after a `GET` the query fails, and
+/// `START` goes out once more. The transport should
 /// return `ErrorKind::TimedOut` or `ErrorKind::WouldBlock` from `read` when
 /// no byte arrives within a short read timeout.
 pub fn query_configuration<T: Read + Write>(
@@ -143,14 +161,28 @@ pub fn query_configuration<T: Read + Write>(
     options: &QueryOptions,
 ) -> Result<NucleusConfig, NucleusCommandError> {
     let query = stop_and_query(port, options);
-    let start = send_command(port, "START", options.command_timeout, Terminator::Exact);
+    let start = start_measurement(port, options);
     match (query, start) {
-        (Ok(config), Ok(_)) => Ok(config),
-        (Err(query_error), Ok(_)) => Err(query_error),
+        (Ok(config), Ok(())) => Ok(config),
+        (Err(query_error), Ok(())) => Err(query_error),
         (query, Err(start_error)) => Err(NucleusCommandError::NotRestarted {
             start_error: Box::new(start_error),
             query_error: query.err().map(Box::new),
         }),
+    }
+}
+
+/// Send `START`. A restart loses the command, and the unit then idles in
+/// command state (p. 34), so `START` goes out once more.
+fn start_measurement<T: Read + Write>(
+    port: &mut T,
+    options: &QueryOptions,
+) -> Result<(), NucleusCommandError> {
+    match send_command(port, "START", options.command_timeout, Terminator::Exact) {
+        Err(NucleusCommandError::Restarted { .. }) => {
+            send_command(port, "START", options.command_timeout, Terminator::Exact).map(|_| ())
+        }
+        result => result.map(|_| ()),
     }
 }
 
@@ -159,8 +191,11 @@ fn stop_and_query<T: Read + Write>(
     options: &QueryOptions,
 ) -> Result<NucleusConfig, NucleusCommandError> {
     match send_command(port, "STOP", options.command_timeout, Terminator::Suffix) {
-        // ERROR means that the unit is already in command mode.
-        Ok(_) | Err(NucleusCommandError::Rejected { .. }) => {}
+        // ERROR means that the unit is already in command mode. After a
+        // restart the unit is in command state too.
+        Ok(_)
+        | Err(NucleusCommandError::Rejected { .. })
+        | Err(NucleusCommandError::Restarted { .. }) => {}
         Err(error) => return Err(error),
     }
     drain(port, options.settle_time)?;
@@ -218,6 +253,7 @@ fn read_reply<T: Read>(
     let deadline = Instant::now() + timeout;
     let mut lines = Vec::new();
     let mut current = String::new();
+    let mut restarted = false;
     let mut buffer = [0u8; 256];
     while Instant::now() < deadline {
         let count = match port.read(&mut buffer) {
@@ -237,10 +273,22 @@ fn read_reply<T: Read>(
                     if line.is_empty() {
                         continue;
                     }
+                    if line.starts_with(BANNER_PREFIX) {
+                        // The banner ends with its own OK, which is not the
+                        // reply to the command.
+                        restarted = true;
+                        lines.push(line.to_string());
+                        continue;
+                    }
                     let (ok, error) = match terminator {
                         Terminator::Exact => (line == "OK", line == "ERROR"),
                         Terminator::Suffix => (line.ends_with("OK"), line.ends_with("ERROR")),
                     };
+                    if ok && restarted {
+                        return Err(NucleusCommandError::Restarted {
+                            command: command.to_string(),
+                        });
+                    }
                     if ok {
                         return Ok(lines);
                     }
@@ -370,10 +418,22 @@ mod tests {
                         .trim_end_matches('\r')
                         .to_string();
                     self.partial_line.clear();
-                    if let Some((_, reply)) =
-                        self.replies.iter().find(|(command, _)| *command == line)
+                    // A command with several scripted replies uses them in
+                    // order, and its last reply repeats.
+                    if let Some(index) = self
+                        .replies
+                        .iter()
+                        .position(|(command, _)| *command == line)
                     {
-                        self.pending.extend(reply.iter().copied());
+                        let repeated = self.replies[index + 1..]
+                            .iter()
+                            .any(|(command, _)| *command == line);
+                        let reply = if repeated {
+                            self.replies.remove(index).1
+                        } else {
+                            self.replies[index].1.clone()
+                        };
+                        self.pending.extend(reply);
                     }
                     self.commands.push(line);
                 } else {
@@ -527,6 +587,42 @@ mod tests {
         let text = error.to_string();
         assert!(text.contains("$PNOR,OK*2B"), "{text}");
         assert!(text.contains("query error"), "{text}");
+    }
+
+    /// Power-on banner (p. 14). The unit is in command state after it.
+    const BANNER: &[u8] = b"Nortek Nucleus1000\r\nVersion 4.2.2\r\nOK\r\n";
+
+    #[test]
+    fn restart_banner_as_the_start_reply_sends_start_again() {
+        let mut replies = healthy_replies(b"OK\r\n");
+        replies.retain(|(command, _)| *command != "START");
+        replies.push(("START", BANNER.to_vec()));
+        replies.push(("START", b"OK\r\n".to_vec()));
+        let mut port = ScriptedPort::new(&[], replies);
+        let config = query_configuration(&mut port, &fast_options()).expect("config");
+        assert_eq!(config, expected_config());
+        let starts = port.commands.iter().filter(|c| *c == "START").count();
+        assert_eq!(starts, 2, "commands: {:?}", port.commands);
+    }
+
+    #[test]
+    fn restart_banner_as_the_stop_reply_continues_the_query() {
+        let mut port = ScriptedPort::new(&[], healthy_replies(BANNER));
+        let config = query_configuration(&mut port, &fast_options()).expect("config");
+        assert_eq!(config, expected_config());
+    }
+
+    #[test]
+    fn restart_banner_during_a_get_fails_the_query_and_still_starts() {
+        let mut replies = healthy_replies(b"OK\r\n");
+        replies[4] = ("GETFW,STR", BANNER.to_vec());
+        let mut port = ScriptedPort::new(&[], replies);
+        let error = query_configuration(&mut port, &fast_options()).expect_err("restarted");
+        assert!(
+            matches!(error, NucleusCommandError::Restarted { ref command } if command == "GETFW,STR"),
+            "{error:?}"
+        );
+        assert_eq!(port.commands.last().map(String::as_str), Some("START"));
     }
 
     #[test]
