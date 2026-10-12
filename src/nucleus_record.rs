@@ -137,6 +137,14 @@ pub struct TrackRecord {
 pub struct AhrsRecord {
     pub common: CommonData,
     pub serial_number: u32,
+    /// AHRS operation mode at byte 24: 0 is field calibration, 2 is the
+    /// regular AHRS mode (p. 84 to 85).
+    pub operation_mode: u8,
+    /// AHRS quality measure at byte 28. It is 0 when the AHRS is not running.
+    pub figure_of_merit: f32,
+    /// Field calibration quality measure at byte 32. It is 0 when hard iron
+    /// is not estimated.
+    pub field_calibration_figure_of_merit: f32,
     pub roll_deg: f32,
     pub pitch_deg: f32,
     pub heading_deg: f32,
@@ -245,6 +253,9 @@ pub fn decode_ahrs_record(frame: &NortekFrame<'_>) -> Result<AhrsRecord, Nucleus
     Ok(AhrsRecord {
         common,
         serial_number: read_u32(data, 16)?,
+        operation_mode: *data.get(24).ok_or_else(|| too_short(25, data))?,
+        figure_of_merit: read_f32(data, 28)?,
+        field_calibration_figure_of_merit: read_f32(data, 32)?,
         roll_deg: read_f32(data, offset)?,
         pitch_deg: read_f32(data, offset + 4)?,
         heading_deg: read_f32(data, offset + 8)?,
@@ -343,6 +354,22 @@ mod tests {
         }
         assert_eq!(ahrs.declination_deg, 0.0);
         assert!((ahrs.depth_m - 0.679_672_2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ahrs_validity_fields_match_manual_worked_example() {
+        // Figure 31 (p. 118): byte 24 is 0x02, bytes 28 to 31 are
+        // CB 82 77 3E, and bytes 32 to 35 are 00 00 A0 40.
+        let bytes = manual_ahrs_frame();
+        let frame = parse_nortek_frame(&bytes).expect("valid frame");
+        let ahrs = decode_ahrs_record(&frame).expect("AHRS record");
+        assert_eq!(ahrs.operation_mode, 2);
+        assert_eq!(
+            ahrs.figure_of_merit,
+            f32::from_le_bytes([0xCB, 0x82, 0x77, 0x3E])
+        );
+        assert!((ahrs.figure_of_merit - 0.241_709_87).abs() < 1e-7);
+        assert_eq!(ahrs.field_calibration_figure_of_merit, 5.0);
     }
 
     #[test]
