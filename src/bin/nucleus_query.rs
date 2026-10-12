@@ -10,6 +10,11 @@ use std::time::Duration;
 
 use sentireader_rust::nucleus_command::{query_configuration, QueryOptions};
 
+/// Upper bounds that keep a typing error from leaving the unit stopped
+/// for a long time.
+const MAX_TIMEOUT_S: f64 = 60.0;
+const MAX_SETTLE_MS: u64 = 10_000;
+
 const USAGE: &str =
     "usage: nucleus_query --port <device> [--baud 115200] [--timeout-s 2.0] [--settle-ms 500]";
 
@@ -47,8 +52,15 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
             other => return Err(format!("unknown option {other}")),
         }
     }
-    if !(timeout_s > 0.0 && timeout_s.is_finite()) {
-        return Err(format!("--timeout-s must be positive, got {timeout_s}"));
+    if !(timeout_s > 0.0 && timeout_s <= MAX_TIMEOUT_S) {
+        return Err(format!(
+            "--timeout-s must be above 0 and at most {MAX_TIMEOUT_S}, got {timeout_s}"
+        ));
+    }
+    if settle_ms > MAX_SETTLE_MS {
+        return Err(format!(
+            "--settle-ms must be at most {MAX_SETTLE_MS}, got {settle_ms}"
+        ));
     }
     Ok(Args {
         port: port.ok_or("--port is required")?,
@@ -137,6 +149,20 @@ mod tests {
         assert_eq!(args.port, "/dev/ttyUSB1");
         assert_eq!(args.timeout_s, 0.5);
         assert_eq!(args.settle_ms, 100);
+    }
+
+    #[test]
+    fn oversized_options_are_rejected() {
+        let base = ["--port", "/dev/ttyS0"];
+        let with = |extra: &[&str]| {
+            let mut all: Vec<&str> = base.to_vec();
+            all.extend_from_slice(extra);
+            parse_args(&strings(&all))
+        };
+        assert!(with(&["--timeout-s", "1e19"]).is_err());
+        assert!(with(&["--timeout-s", "60.5"]).is_err());
+        assert!(with(&["--settle-ms", "10001"]).is_err());
+        assert!(with(&["--timeout-s", "60", "--settle-ms", "10000"]).is_ok());
     }
 
     #[test]

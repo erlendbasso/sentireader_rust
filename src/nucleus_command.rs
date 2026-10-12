@@ -31,6 +31,8 @@ pub struct NucleusConfig {
     pub rotation_xz_deg: f32,
 }
 
+/// Wait times of the query. A duration that is too large for [`Instant`]
+/// means no deadline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QueryOptions {
     /// Maximum wait for the reply to one command.
@@ -250,12 +252,12 @@ fn read_reply<T: Read>(
     timeout: Duration,
     terminator: Terminator,
 ) -> Result<Vec<String>, NucleusCommandError> {
-    let deadline = Instant::now() + timeout;
+    let deadline = Instant::now().checked_add(timeout);
     let mut lines = Vec::new();
     let mut current = String::new();
     let mut restarted = false;
     let mut buffer = [0u8; 256];
-    while Instant::now() < deadline {
+    while before(deadline) {
         let count = match port.read(&mut buffer) {
             Ok(0) => {
                 std::thread::sleep(Duration::from_millis(1));
@@ -323,11 +325,20 @@ fn last_received_lines(lines: Vec<String>) -> Vec<String> {
     lines
 }
 
+/// True until `deadline`. `None` is a deadline that never comes.
+fn before(deadline: Option<Instant>) -> bool {
+    // A match instead of Option::is_none_or, which is newer than Rust 1.80.
+    match deadline {
+        Some(deadline) => Instant::now() < deadline,
+        None => true,
+    }
+}
+
 /// Read and discard input for `settle`.
 fn drain<T: Read>(port: &mut T, settle: Duration) -> Result<(), NucleusCommandError> {
-    let deadline = Instant::now() + settle;
+    let deadline = Instant::now().checked_add(settle);
     let mut buffer = [0u8; 256];
-    while Instant::now() < deadline {
+    while before(deadline) {
         match port.read(&mut buffer) {
             Ok(0) => std::thread::sleep(Duration::from_millis(1)),
             Ok(_) => {}
@@ -623,6 +634,19 @@ mod tests {
             "{error:?}"
         );
         assert_eq!(port.commands.last().map(String::as_str), Some("START"));
+    }
+
+    #[test]
+    fn huge_command_timeout_does_not_panic() {
+        // Instant plus Duration::MAX overflows. That must not panic after
+        // STOP went out, because START would then never be sent.
+        let mut port = ScriptedPort::new(&[], healthy_replies(b"OK\r\n"));
+        let options = QueryOptions {
+            command_timeout: Duration::MAX,
+            settle_time: Duration::from_millis(5),
+        };
+        let config = query_configuration(&mut port, &options).expect("config");
+        assert_eq!(config, expected_config());
     }
 
     #[test]
