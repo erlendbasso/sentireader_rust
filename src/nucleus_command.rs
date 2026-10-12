@@ -52,8 +52,13 @@ impl Default for QueryOptions {
 #[derive(Debug)]
 pub enum NucleusCommandError {
     Io(io::Error),
+    /// No `OK` or `ERROR` line arrived in time. `received` holds the last
+    /// printable lines that did arrive, so that a reply format that differs
+    /// from the manual shows up at the bench. Empty means that nothing
+    /// arrived, for example because the transmit line does not reach the unit.
     Timeout {
         command: String,
+        received: Vec<String>,
     },
     Rejected {
         command: String,
@@ -76,7 +81,13 @@ impl fmt::Display for NucleusCommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(error) => write!(f, "serial I/O error: {error}"),
-            Self::Timeout { command } => write!(f, "no reply to {command}"),
+            Self::Timeout { command, received } => {
+                if received.is_empty() {
+                    write!(f, "no reply to {command} (nothing received)")
+                } else {
+                    write!(f, "no reply to {command} (received {received:?})")
+                }
+            }
             Self::Rejected { command } => write!(f, "the Nucleus rejected {command}"),
             Self::MalformedReply { command, reply } => {
                 write!(f, "unexpected reply to {command}: {reply:?}")
@@ -106,6 +117,10 @@ impl From<io::Error> for NucleusCommandError {
         NucleusCommandError::Io(error)
     }
 }
+
+/// Most lines and characters per line that a timeout error keeps.
+const MAX_RECEIVED_LINES: usize = 8;
+const MAX_RECEIVED_LINE_CHARS: usize = 120;
 
 /// How a reply line ends the reply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,10 +232,11 @@ fn read_reply<T: Read>(
         for &byte in &buffer[..count] {
             match byte {
                 b'\r' | b'\n' => {
-                    if current.is_empty() {
+                    let taken = std::mem::take(&mut current);
+                    let line = taken.trim();
+                    if line.is_empty() {
                         continue;
                     }
-                    let line = std::mem::take(&mut current);
                     let (ok, error) = match terminator {
                         Terminator::Exact => (line == "OK", line == "ERROR"),
                         Terminator::Suffix => (line.ends_with("OK"), line.ends_with("ERROR")),
@@ -233,16 +249,30 @@ fn read_reply<T: Read>(
                             command: command.to_string(),
                         });
                     }
-                    lines.push(line);
+                    lines.push(line.to_string());
                 }
                 0x20..=0x7E => current.push(char::from(byte)),
                 _ => current.clear(),
             }
         }
     }
+    lines.push(current);
     Err(NucleusCommandError::Timeout {
         command: command.to_string(),
+        received: last_received_lines(lines),
     })
+}
+
+/// Keep the last non-empty lines, each cut to a bounded length.
+fn last_received_lines(lines: Vec<String>) -> Vec<String> {
+    let mut lines: Vec<String> = lines
+        .into_iter()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.chars().take(MAX_RECEIVED_LINE_CHARS).collect())
+        .collect();
+    let excess = lines.len().saturating_sub(MAX_RECEIVED_LINES);
+    lines.drain(..excess);
+    lines
 }
 
 /// Read and discard input for `settle`.
@@ -455,10 +485,57 @@ mod tests {
         replies.retain(|(command, _)| *command != "GETFW,STR");
         let mut port = ScriptedPort::new(&[], replies);
         let error = query_configuration(&mut port, &fast_options()).expect_err("timeout");
-        assert!(
-            matches!(error, NucleusCommandError::Timeout { ref command } if command == "GETFW,STR")
-        );
+        assert!(matches!(
+            error,
+            NucleusCommandError::Timeout { ref command, ref received }
+                if command == "GETFW,STR" && received.is_empty()
+        ));
+        assert!(error.to_string().contains("nothing received"), "{error}");
         assert_eq!(port.commands.last().map(String::as_str), Some("START"));
+    }
+
+    #[test]
+    fn timeout_reports_the_received_text() {
+        // NMEA-style replies (p. 48) do not end in a bare OK, so both STOP
+        // and START time out. The error must show what the unit sent.
+        let mut replies = healthy_replies(b"$PNOR,OK*2B\r\n");
+        for reply in replies
+            .iter_mut()
+            .filter(|(command, _)| *command == "START")
+        {
+            reply.1 = b"$PNOR,OK*2B\r\n".to_vec();
+        }
+        let mut port = ScriptedPort::new(&[], replies);
+        let error = query_configuration(&mut port, &fast_options()).expect_err("timeout");
+        let NucleusCommandError::NotRestarted {
+            start_error,
+            query_error,
+        } = &error
+        else {
+            panic!("expected NotRestarted, got {error:?}");
+        };
+        assert!(matches!(
+            start_error.as_ref(),
+            NucleusCommandError::Timeout { command, received }
+                if command == "START" && *received == ["$PNOR,OK*2B"]
+        ));
+        assert!(matches!(
+            query_error.as_deref(),
+            Some(NucleusCommandError::Timeout { command, received })
+                if command == "STOP" && *received == ["$PNOR,OK*2B"]
+        ));
+        let text = error.to_string();
+        assert!(text.contains("$PNOR,OK*2B"), "{text}");
+        assert!(text.contains("query error"), "{text}");
+    }
+
+    #[test]
+    fn reply_lines_tolerate_surrounding_spaces() {
+        let mut replies = healthy_replies(b" OK \r\n");
+        replies[2] = ("GETBT,MODE", b"\"AUTO\" \r\nOK  \r\n".to_vec());
+        let mut port = ScriptedPort::new(&[], replies);
+        let config = query_configuration(&mut port, &fast_options()).expect("config");
+        assert_eq!(config, expected_config());
     }
 
     #[test]
