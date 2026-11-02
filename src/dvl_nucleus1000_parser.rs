@@ -99,25 +99,39 @@ impl Default for ExtendedDVLMessage {
     }
 }
 
-fn get_data_information(data_id: u8) -> DataID {
+fn data_id_from_series_id(data_id: u8) -> Option<DataID> {
     match data_id {
-        130 => DataID::ImuData,
-        135 => DataID::MagnetometerData,
-        139 => DataID::FieldCalibData,
-        160 => DataID::StringData,
-        170 => DataID::AltimeterData,
-        180 => DataID::BottomTrackData,
-        190 => DataID::WaterTrackData,
-        192 => DataID::CurrentProfileData,
-        210 => DataID::AHRSData,
-        _ => panic!("Unknown data id: {}", data_id),
+        130 => Some(DataID::ImuData),
+        135 => Some(DataID::MagnetometerData),
+        139 => Some(DataID::FieldCalibData),
+        160 => Some(DataID::StringData),
+        170 => Some(DataID::AltimeterData),
+        180 => Some(DataID::BottomTrackData),
+        190 => Some(DataID::WaterTrackData),
+        192 => Some(DataID::CurrentProfileData),
+        210 => Some(DataID::AHRSData),
+        _ => None,
     }
 }
 
+fn get_data_information(data_id: u8) -> DataID {
+    data_id_from_series_id(data_id).unwrap_or_else(|| panic!("Unknown data id: {}", data_id))
+}
+
+/// Legacy accessor. It panics on short input and on unknown record ids. New
+/// code should use [`try_get_data_id`].
 pub fn get_data_id(data: &[u8]) -> DataID {
     let data_series_id = data[2];
 
     get_data_information(data_series_id)
+}
+
+/// Record type of a validated Nortek frame. Returns `None` for input that is
+/// not a valid Nortek record, such as ASCII command replies, and for unknown
+/// record ids. Never panics.
+pub fn try_get_data_id(data: &[u8]) -> Option<DataID> {
+    let frame = crate::nortek_frame::parse_nortek_frame(data).ok()?;
+    data_id_from_series_id(frame.data_series_id)
 }
 
 fn remove_header_data(data: &[u8]) -> Vec<u8> {
@@ -296,5 +310,36 @@ pub fn parse_ahrs_data(data: &[u8]) -> AHRSMessage {
         heading: get_f32_from_byte_array(&data, offset + 8),
         depth: get_f32_from_byte_array(&data, offset + 68),
         orientation,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nortek_frame::test_support::{build_frame, manual_ahrs_frame};
+
+    #[test]
+    fn try_get_data_id_accepts_a_valid_frame() {
+        assert!(matches!(
+            try_get_data_id(&manual_ahrs_frame()),
+            Some(DataID::AHRSData)
+        ));
+        assert!(matches!(
+            try_get_data_id(&build_frame(0xB4, &[0u8; 128])),
+            Some(DataID::BottomTrackData)
+        ));
+    }
+
+    #[test]
+    fn try_get_data_id_rejects_text_and_unknown_ids_without_panicking() {
+        assert!(try_get_data_id(b"OK\r\n").is_none());
+        assert!(try_get_data_id(b"").is_none());
+        assert!(try_get_data_id(&[0xA5]).is_none());
+        assert!(try_get_data_id(&build_frame(0x99, &[0u8; 16])).is_none());
+        let split_record = build_frame(0xB4, &[0u8; 128]);
+        assert!(try_get_data_id(&split_record[..60]).is_none());
+        let mut corrupted = manual_ahrs_frame();
+        corrupted[20] ^= 0x01;
+        assert!(try_get_data_id(&corrupted).is_none());
     }
 }

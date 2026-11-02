@@ -46,6 +46,33 @@ the payload for the selected sensor:
 These modules return Rust data structures. ROS message construction and topic
 selection belong to `blueboat_sentinode`.
 
+## Nucleus protocol modules
+
+- `nortek_frame` validates one Nortek record: sync byte `0xA5`, header
+  size 10, and the header and data checksums (Nucleus Integrator's Guide
+  N3015-033, p. 83 and p. 115). It never panics. Bytes after the declared
+  data length are ignored.
+- `nucleus_record` decodes `_CommonData`, bottom-track (`0xB4`) and
+  water-track (`0xBE`) records with every field of p. 91 to 94, and AHRS
+  (`0xD2`) records. All values are little-endian.
+- `nucleus_command` runs a read-only configuration query over any
+  `Read + Write` transport: `STOP`, `GETMISSION,POFF,SV,SA`, `GETBT,MODE`,
+  `GETINST,ROTXY,ROTYZ,ROTXZ`, `GETFW,STR`, `ID,STR,SN`, then `START`. It
+  sends `START` also after a failed step. It never sends a `SET` command.
+- `dvl_nucleus1000_parser::try_get_data_id` is the non-panicking
+  replacement for `get_data_id`.
+
+### Bench tool
+
+`cargo run --release --bin nucleus_query -- --port /dev/ttyS0` prints the
+Nucleus configuration as YAML. The query stops Nucleus measurement for a
+few seconds. Do not run it during a mission.
+
+### Tests
+
+Run `cargo test --lib` and `cargo test --bin nucleus_query`. The tests in
+`tests/integration_test.rs` need a SentiBoard on `/dev/ttySentiboard02`.
+
 ## Sentiboard counter mapping
 
 The library's `sentiboard_clock::SentiboardClock` maps the free-running 100 MHz

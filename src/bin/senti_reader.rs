@@ -7,7 +7,7 @@ extern crate rmp_serde as rmps;
 use serde::{Deserialize, Serialize};
 
 use sentireader_rust::{
-    dvl_nucleus1000_parser::{get_data_id, DataID},
+    dvl_nucleus1000_parser::{try_get_data_id, DataID},
     //   coning_and_sculling::{self, ConingAndSculling}
     sentireader,
     stim300_parser::{self},
@@ -86,7 +86,9 @@ async fn main() -> io::Result<()> {
 
         match sensor_id {
             SensorID::DVL_NUCLEUS => {
-                let data_id = get_data_id(&sensor_data);
+                let Some(data_id) = try_get_data_id(&sensor_data) else {
+                    continue;
+                };
 
                 match data_id {
                     DataID::BottomTrackData => {
